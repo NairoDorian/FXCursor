@@ -15,8 +15,8 @@ if (-not (Get-Command "cargo-upgrade" -ErrorAction SilentlyContinue)) {
 Push-Location "$PSScriptRoot/project_cursor"
 
 try {
-    Write-Host "Upgrading all dependencies in Cargo.toml to latest versions..." -ForegroundColor Yellow
-    cargo upgrade --to-latest
+    Write-Host "Upgrading all dependencies in Cargo.toml to latest compatible versions..." -ForegroundColor Yellow
+    cargo upgrade --compatible
     
     Write-Host "Running cargo update to update Cargo.lock..." -ForegroundColor Yellow
     cargo update

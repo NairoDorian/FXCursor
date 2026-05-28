@@ -9,8 +9,8 @@ if %errorlevel% neq 0 (
     cargo install cargo-edit --locked
 )
 
-echo Upgrading all dependencies in Cargo.toml to latest versions...
-cargo upgrade --to-latest
+echo Upgrading all dependencies in Cargo.toml to latest compatible versions...
+cargo upgrade --compatible
 
 echo Running cargo update...
 cargo update

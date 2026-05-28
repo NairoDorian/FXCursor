@@ -27,7 +27,7 @@ tray-icon = "0.14"
 log = "0.4"
 env_logger = "0.11"
 raw-window-handle = "0.6"
-bytemuck = { version = "1.15", features = ["derive"] }
+bytemuck = { version = "1.25", features = ["derive"] }
 instant = "0.1"
 pollster = "0.3"
 
