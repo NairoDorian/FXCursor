@@ -1,0 +1,11 @@
+# Rust build artifacts
+target/
+**/target/
+**/*.rs.bk
+
+# OS temporary files
+.DS_Store
+Thumbs.db
+
+# Local configuration files
+project_cursor/config.ron
