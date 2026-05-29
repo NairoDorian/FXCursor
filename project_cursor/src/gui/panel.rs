@@ -22,11 +22,21 @@ pub fn show_settings_panel(ctx: &egui::Context, config: &mut AppConfig, config_c
             ui.add_space(10.0);
 
             // General Toggle
-            let mut enabled = config.enabled;
-            if ui.checkbox(&mut enabled, "Enable Cursor Effects").changed() {
-                config.enabled = enabled;
-                *config_changed = true;
-            }
+            ui.horizontal(|ui| {
+                let mut enabled = config.enabled;
+                if ui.checkbox(&mut enabled, "Enable Cursor Effects").changed() {
+                    config.enabled = enabled;
+                    *config_changed = true;
+                }
+
+                ui.add_space(20.0);
+
+                let mut click_response = config.click_response;
+                if ui.checkbox(&mut click_response, "🌊 Click Ripple on Click").changed() {
+                    config.click_response = click_response;
+                    *config_changed = true;
+                }
+            });
 
             ui.add_space(10.0);
 

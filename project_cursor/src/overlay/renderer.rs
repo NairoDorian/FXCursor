@@ -204,6 +204,11 @@ impl OverlayRenderer {
         // --- 2. Particle Trail Simulation ---
         if config.enabled {
             if config.effect_type == 0 {
+                // Keep particle vector within the configured trail length limits
+                if self.particles.len() > config.trail_length as usize {
+                    self.particles.truncate(config.trail_length as usize);
+                }
+
                 // Spawn new particle at mouse position
                 if self.particles.len() < config.trail_length as usize {
                     // Let's spawn new particles

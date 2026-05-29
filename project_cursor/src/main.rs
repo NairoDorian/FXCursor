@@ -24,7 +24,7 @@ fn main() {
 
     // Create the Event Loop
     let event_loop = EventLoop::new().expect("Failed to create event loop");
-    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     // 1. Spawning Window A: Config GUI
     let gui_builder = WindowBuilder::new()
@@ -111,7 +111,7 @@ fn main() {
             // Menu / System Tray event processing
             Event::AboutToWait => {
                 // Poll system tray click actions
-                if let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
+                while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
                     if let Some(action) = tray.handle_menu_event(&event) {
                         match action {
                             TrayAction::Quit => {
@@ -150,14 +150,22 @@ fn main() {
                     overlay_window.render(&device, &queue, &config);
                     if config_changed {
                         gui_window.window.request_redraw();
+                        // Auto-save config to disk on every change
+                        if let Err(e) = config.save() {
+                            log::warn!("Failed to auto-save config: {}", e);
+                        }
                         config_changed = false;
                     }
                 }
+
+                // Set next wake up time
+                let next_frame_time = last_frame_time + frame_interval;
+                elwt.set_control_flow(ControlFlow::WaitUntil(next_frame_time));
             }
 
             Event::WindowEvent { window_id, event } => {
                 if window_id == overlay_id {
-                    log::info!("Overlay WindowEvent: {:?}", event);
+                    log::trace!("Overlay WindowEvent: {:?}", event);
                 }
 
                 // Pass GUI events to egui-winit handler
@@ -202,10 +210,10 @@ fn main() {
                         }
                     }
 
-                    WindowEvent::RedrawRequested => {
-                        if window_id == gui_id && config_window_visible {
-                            gui_window.render(&device, &queue, &mut config, &mut config_changed);
-                        }
+                    WindowEvent::RedrawRequested
+                        if window_id == gui_id && config_window_visible =>
+                    {
+                        gui_window.render(&device, &queue, &mut config, &mut config_changed);
                     }
 
                     _ => {}

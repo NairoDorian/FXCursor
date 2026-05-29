@@ -94,7 +94,15 @@ pub fn configure_overlay_window(window: &Window) {
                     log::info!("WndProc reset detected. Re-subclassing overlay window...");
                     let prev_ptr = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, target_wndproc);
                     if prev_ptr != 0 && prev_ptr != target_wndproc {
-                        std::ptr::addr_of_mut!(PREV_WNDPROC).write(Some(std::mem::transmute(prev_ptr)));
+                        std::ptr::addr_of_mut!(PREV_WNDPROC).write(Some(std::mem::transmute::<
+                            isize,
+                            unsafe extern "system" fn(
+                                windows_sys::Win32::Foundation::HWND,
+                                u32,
+                                windows_sys::Win32::Foundation::WPARAM,
+                                windows_sys::Win32::Foundation::LPARAM,
+                            ) -> windows_sys::Win32::Foundation::LRESULT,
+                        >(prev_ptr)));
                     }
                 }
             }
