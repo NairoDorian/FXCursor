@@ -9,3 +9,6 @@ Thumbs.db
 
 # Local configuration files
 project_cursor/config.ron
+
+# Repomix generated output
+repomix-output.md

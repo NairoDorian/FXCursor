@@ -1,0 +1,43 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "output": {
+    "filePath": "repomix-output.md",
+    "style": "markdown",
+    "showLineNumbers": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "topFilesLength": 10,
+    "instructionFilePath": "repomix-instruction.md",
+    "files": true,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "includeFullDirectoryStructure": true,
+    "tokenCountTree": true,
+    "git": {
+      "includeLogs": true,
+      "includeLogsCount": 10
+    }
+  },
+  "include": [
+    "README.md",
+    "memory.md",
+    "repomix-instruction.md",
+    "repo-summary.md"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "target/",
+      "**/target/",
+      "**/*.rs.bk",
+      ".DS_Store",
+      "Thumbs.db",
+      "project_cursor/config.ron",
+      "repomix-output.md",
+      "repomix-output-compressed.md",
+      "repomix-output.json",
+      "original_mods/**"
+    ]
+  }
+}
