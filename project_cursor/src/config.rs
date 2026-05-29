@@ -119,7 +119,7 @@ impl Default for AppConfig {
             body_spring: 50.0,
             body_friction: 30.0,
             position_skip: 0,
-            interpolation_steps: 4,
+            interpolation_steps: 8,
             fade_mode: 3, // Sigmoid
             enable_gradient: true,
             rainbow_mode: false,

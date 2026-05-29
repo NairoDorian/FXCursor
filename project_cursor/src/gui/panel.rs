@@ -126,7 +126,7 @@ pub fn show_settings_panel(ctx: &egui::Context, config: &mut AppConfig, config_c
 
                     ui.horizontal(|ui| {
                         ui.label("Spline Smoothness:");
-                        ui.add(Slider::new(&mut config.interpolation_steps, 1..=10).text("steps"));
+                        ui.add(Slider::new(&mut config.interpolation_steps, 1..=20).text("steps"));
                     });
 
                     ui.horizontal(|ui| {

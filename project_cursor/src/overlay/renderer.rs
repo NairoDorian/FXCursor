@@ -658,15 +658,7 @@ impl OverlayRenderer {
         }
 
         let n = self.trail_nodes.len();
-        
-        let mut steps = config.interpolation_steps;
-        if config.adaptive_quality {
-            let speed_factor = ((self.max_recent_speed - 15.0) / 50.0).clamp(0.0, 1.0);
-            steps = (config.interpolation_steps as f32 * (1.0 - speed_factor * 0.8)) as u32;
-            steps = steps.max(1);
-        }
-
-        self.samples.reserve((n - 1) * steps as usize + 1);
+        self.samples.reserve((n - 1) * config.interpolation_steps as usize + 1);
 
         let get_node = |idx: isize| -> &TrailNode {
             &self.trail_nodes[idx.clamp(0, n as isize - 1) as usize]
@@ -678,8 +670,49 @@ impl OverlayRenderer {
             let p2 = get_node(i as isize + 1);
             let p3 = get_node(i as isize + 2);
 
-            for s in 0..steps {
-                let t = s as f32 / steps as f32;
+            let mut segment_steps = config.interpolation_steps;
+            if config.adaptive_quality {
+                // Calculate local curvature by measuring the angle between segments: (p0 -> p1), (p1 -> p2), and (p2 -> p3)
+                let d1x = p2.x - p1.x;
+                let d1y = p2.y - p1.y;
+                let len1 = (d1x * d1x + d1y * d1y).sqrt();
+
+                let d0x = p1.x - p0.x;
+                let d0y = p1.y - p0.y;
+                let len0 = (d0x * d0x + d0y * d0y).sqrt();
+
+                let d2x = p3.x - p2.x;
+                let d2y = p3.y - p2.y;
+                let len2 = (d2x * d2x + d2y * d2y).sqrt();
+
+                let dot1 = if len0 > 0.1 && len1 > 0.1 {
+                    (d0x * d1x + d0y * d1y) / (len0 * len1)
+                } else {
+                    1.0
+                };
+                let dot2 = if len1 > 0.1 && len2 > 0.1 {
+                    (d1x * d2x + d1y * d2y) / (len1 * len2)
+                } else {
+                    1.0
+                };
+
+                let min_dot = dot1.min(dot2).clamp(-1.0, 1.0);
+                let curvature = 1.0 - min_dot; // 0.0 is straight, 2.0 is 180-deg fold
+
+                // Scale up steps if path is curved, scale down steps if it is straight to save vertices.
+                // 20.0 factor means a bend of ~18 degrees (dot = 0.95) is considered highly curved.
+                let curve_factor = (curvature * 20.0).clamp(0.0, 1.0);
+
+                // Speed factor: if moving fast, we need a bit more density to avoid stretched vertices.
+                let speed_factor = (p1.speed / 100.0).clamp(0.0, 1.0);
+
+                // Scale factor goes from 0.25 (straight & slow) to 1.0 (curved) or up to 1.75 (curved & fast)
+                let step_scale = 0.25 + 0.75 * curve_factor + 0.75 * curve_factor * speed_factor;
+                segment_steps = ((config.interpolation_steps as f32 * step_scale) as u32).max(1);
+            }
+
+            for s in 0..segment_steps {
+                let t = s as f32 / segment_steps as f32;
                 let (x, y) = catmull_rom((p0.x, p0.y), (p1.x, p1.y), (p2.x, p2.y), (p3.x, p3.y), t);
                 let speed = p1.speed * (1.0 - t) + p2.speed * t;
                 let progress = (i as f32 + t) / (n - 1) as f32;
