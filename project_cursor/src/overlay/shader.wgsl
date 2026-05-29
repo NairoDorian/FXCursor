@@ -1,81 +1,121 @@
 struct Uniforms {
-    color: vec4<f32>,
     screen_size: vec2<f32>,
-    mouse_pos: vec2<f32>,
     time: f32,
-    ripple_radius: f32,
-    effect_type: u32,
     padding: f32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
-struct VertexInput {
+// ==========================================
+// 1. RIBBON SHADER
+// ==========================================
+
+struct RibbonVertexInput {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) size: f32,
+    @location(2) tex: vec2<f32>, // [blur, v] where v is in [-1.0, 1.0]
 };
 
-struct VertexOutput {
+struct RibbonVertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,
 };
 
-fn get_quad_offset(index: u32) -> vec2<f32> {
-    switch (index % 6u) {
-        case 0u: { return vec2<f32>(-1.0, -1.0); }
-        case 1u: { return vec2<f32>(1.0, -1.0); }
-        case 2u: { return vec2<f32>(-1.0, 1.0); }
-        case 3u: { return vec2<f32>(-1.0, 1.0); }
-        case 4u: { return vec2<f32>(1.0, -1.0); }
-        default: { return vec2<f32>(1.0, 1.0); }
-    }
-}
-
 @vertex
-fn vs_main(
-    model: VertexInput,
-    @builtin(vertex_index) in_vertex_index: u32,
-) -> VertexOutput {
-    var out: VertexOutput;
+fn vs_ribbon(model: RibbonVertexInput) -> RibbonVertexOutput {
+    var out: RibbonVertexOutput;
     
-    let uv_offset = get_quad_offset(in_vertex_index);
-    let offset = uv_offset * model.size;
-    let world_pos = model.position + offset;
-    
-    // Map to normalized device coordinates (NDC)
-    let clip_x = (world_pos.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let clip_y = 1.0 - (world_pos.y / uniforms.screen_size.y) * 2.0; // Y is inverted in screen coordinates vs NDC
+    let clip_x = (model.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
+    let clip_y = 1.0 - (model.position.y / uniforms.screen_size.y) * 2.0;
     
     out.clip_position = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
     out.color = model.color;
-    out.uv = uv_offset;
+    out.uv = model.tex;
     
     return out;
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let dist_sq = in.uv.x * in.uv.x + in.uv.y * in.uv.y;
+fn fs_ribbon(in: RibbonVertexOutput) -> @location(0) vec4<f32> {
+    let blur = clamp(in.uv.x, 0.001, 1.0);
+    let v = abs(in.uv.y);
+    let alpha = 1.0 - smoothstep(1.0 - blur, 1.0, v);
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
+}
+
+// ==========================================
+// 2. INSTANCED SDF CIRCLE SHADER
+// ==========================================
+
+struct CircleVertexInput {
+    @location(0) corner: vec2<f32>,       // Raw quad corner [-1..1, -1..1]
     
-    if (dist_sq > 1.0) {
-        discard;
+    // Instance attributes
+    @location(1) center: vec2<f32>,
+    @location(2) radius: vec2<f32>,
+    @location(3) angle: f32,
+    @location(4) thickness: f32,          // <0 means filled, >=0 is outline width
+    @location(5) color: vec4<f32>,
+};
+
+struct CircleVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) local_pos: vec2<f32>,
+    @location(1) radius: vec2<f32>,
+    @location(2) thickness: f32,
+    @location(3) color: vec4<f32>,
+};
+
+@vertex
+fn vs_circle(model: CircleVertexInput) -> CircleVertexOutput {
+    var out: CircleVertexOutput;
+    
+    let max_rad = max(model.radius.x, model.radius.y);
+    let padding = max(model.thickness, 0.0) * 0.5 + 2.0;
+    let half_size = max_rad + padding;
+    let local_pos = model.corner * half_size;
+    
+    let cos_a = cos(model.angle);
+    let sin_a = sin(model.angle);
+    let rotated_local = vec2<f32>(
+        local_pos.x * cos_a - local_pos.y * sin_a,
+        local_pos.x * sin_a + local_pos.y * cos_a
+    );
+    
+    let world_pos = model.center + rotated_local;
+    let clip_x = (world_pos.x / uniforms.screen_size.x) * 2.0 - 1.0;
+    let clip_y = 1.0 - (world_pos.y / uniforms.screen_size.y) * 2.0;
+    
+    out.clip_position = vec4<f32>(clip_x, clip_y, 0.0, 1.0);
+    out.local_pos = local_pos;
+    out.radius = model.radius;
+    out.thickness = model.thickness;
+    out.color = model.color;
+    
+    return out;
+}
+
+@fragment
+fn fs_circle(in: CircleVertexOutput) -> @location(0) vec4<f32> {
+    let len = length(in.local_pos);
+    let d_norm = length(in.local_pos / in.radius);
+    
+    var dist = -1.0;
+    if (len > 0.0 && d_norm > 0.0) {
+        dist = len * (d_norm - 1.0) / d_norm;
     }
     
-    if (uniforms.effect_type == 0u) {
-        // Particle trail: soft circle mask
-        let alpha = 1.0 - smoothstep(0.3, 1.0, dist_sq);
-        return vec4<f32>(in.color.rgb, in.color.a * alpha);
-    } else if (uniforms.effect_type == 1u) {
-        // Ripple: Ring shape
-        let dist = sqrt(dist_sq);
-        // Fade out at the center and edges
-        let ring = smoothstep(0.8, 0.9, dist) * (1.0 - smoothstep(0.9, 1.0, dist));
-        return vec4<f32>(in.color.rgb, in.color.a * ring);
+    var alpha = 0.0;
+    if (in.thickness < 0.0) {
+        // Filled circle/ellipse
+        alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
     } else {
-        // Glow aura: Soft radial glow
-        let alpha = exp(-dist_sq * 4.0);
-        return vec4<f32>(in.color.rgb, in.color.a * alpha);
+        // Ring outline
+        let ring_dist = abs(dist);
+        let half_t = in.thickness * 0.5;
+        alpha = 1.0 - smoothstep(half_t - 1.0, half_t + 1.0, ring_dist);
     }
+    
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }

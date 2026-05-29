@@ -143,8 +143,7 @@ fn main() {
                     let local_y = global_y - overlay_pos.y as f32;
 
                     // Trigger physics update (Left click or any click is mapped to active clicked response)
-                    let click_pressed = buttons.iter().any(|&b| b);
-                    overlay_window.renderer.update_physics((local_x, local_y), click_pressed, &config);
+                    overlay_window.renderer.update_physics((local_x, local_y), buttons, &config);
 
                     // Render overlay frame directly to bypass OS event-throttling on focus loss
                     overlay_window.render(&device, &queue, &config);
