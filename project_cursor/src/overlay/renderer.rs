@@ -384,7 +384,7 @@ impl OverlayRenderer {
 
         let circle_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("circle instance buffer"),
-            size: (2048 * std::mem::size_of::<CircleInstance>()) as u64,
+            size: (8192 * std::mem::size_of::<CircleInstance>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -839,80 +839,156 @@ impl OverlayRenderer {
             right_points.push([s.x - s.nx * half_w, s.y - s.ny * half_w]);
         }
 
-        // --- 1. ROUND HEAD CAP ---
-        let s0 = &self.samples[0];
-        let angle = s0.ny.atan2(s0.nx);
-        let r0 = (config.trail_width * layer.width_factor * apply_fade_curve(s0.progress, config.fade_mode) * (1.0 + (s0.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w) * 0.5;
-        let k_cap_steps = 16;
+        if config.trail_style == 0 {
+            // --- 1. ROUND HEAD CAP ---
+            let s0 = &self.samples[0];
+            let angle = s0.ny.atan2(s0.nx);
+            let r0 = (config.trail_width * layer.width_factor * apply_fade_curve(s0.progress, config.fade_mode) * (1.0 + (s0.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w) * 0.5;
+            let k_cap_steps = 16;
 
-        for j in 0..k_cap_steps {
-            let theta1 = angle + (j as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
-            let theta2 = angle + ((j + 1) as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
+            for j in 0..k_cap_steps {
+                let theta1 = angle + (j as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
+                let theta2 = angle + ((j + 1) as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
 
-            dst.push(TrailVertex {
-                position: [s0.x, s0.y],
-                color: colors[0],
-                tex: [blurs[0], 0.0],
-            });
-            dst.push(TrailVertex {
-                position: [s0.x + theta1.cos() * r0, s0.y + theta1.sin() * r0],
-                color: colors[0],
-                tex: [blurs[0], 1.0],
-            });
-            dst.push(TrailVertex {
-                position: [s0.x + theta2.cos() * r0, s0.y + theta2.sin() * r0],
-                color: colors[0],
-                tex: [blurs[0], 1.0],
-            });
-        }
+                dst.push(TrailVertex {
+                    position: [s0.x, s0.y],
+                    color: colors[0],
+                    tex: [blurs[0], 0.0],
+                });
+                dst.push(TrailVertex {
+                    position: [s0.x + theta1.cos() * r0, s0.y + theta1.sin() * r0],
+                    color: colors[0],
+                    tex: [blurs[0], 1.0],
+                });
+                dst.push(TrailVertex {
+                    position: [s0.x + theta2.cos() * r0, s0.y + theta2.sin() * r0],
+                    color: colors[0],
+                    tex: [blurs[0], 1.0],
+                });
+            }
 
-        // --- 2. MAIN RIBBON GEOMETRY ---
-        for i in 0..num_samples - 1 {
-            let a = left_points[i];
-            let b = right_points[i];
-            let c = left_points[i + 1];
-            let d = right_points[i + 1];
+            // --- 2. MAIN RIBBON GEOMETRY ---
+            for i in 0..num_samples - 1 {
+                let a = left_points[i];
+                let b = right_points[i];
+                let c = left_points[i + 1];
+                let d = right_points[i + 1];
 
-            let col_i = colors[i];
-            let col_next = colors[i + 1];
-            let blur_i = blurs[i];
-            let blur_next = blurs[i + 1];
+                let col_i = colors[i];
+                let col_next = colors[i + 1];
+                let blur_i = blurs[i];
+                let blur_next = blurs[i + 1];
 
-            // Triangle 1: A, B, C
-            dst.push(TrailVertex { position: a, color: col_i, tex: [blur_i, 1.0] });
-            dst.push(TrailVertex { position: b, color: col_i, tex: [blur_i, -1.0] });
-            dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
+                // Triangle 1: A, B, C
+                dst.push(TrailVertex { position: a, color: col_i, tex: [blur_i, 1.0] });
+                dst.push(TrailVertex { position: b, color: col_i, tex: [blur_i, -1.0] });
+                dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
 
-            // Triangle 2: B, D, C
-            dst.push(TrailVertex { position: b, color: col_i, tex: [blur_i, -1.0] });
-            dst.push(TrailVertex { position: d, color: col_next, tex: [blur_next, -1.0] });
-            dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
-        }
+                // Triangle 2: B, D, C
+                dst.push(TrailVertex { position: b, color: col_i, tex: [blur_i, -1.0] });
+                dst.push(TrailVertex { position: d, color: col_next, tex: [blur_next, -1.0] });
+                dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
+            }
 
-        // --- 3. ROUND TAIL CAP ---
-        let sn = &self.samples[num_samples - 1];
-        let angle_n = sn.ny.atan2(sn.nx);
-        let rn = (config.trail_width * layer.width_factor * apply_fade_curve(sn.progress, config.fade_mode) * (1.0 + (sn.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w) * 0.5;
+            // --- 3. ROUND TAIL CAP ---
+            let sn = &self.samples[num_samples - 1];
+            let angle_n = sn.ny.atan2(sn.nx);
+            let rn = (config.trail_width * layer.width_factor * apply_fade_curve(sn.progress, config.fade_mode) * (1.0 + (sn.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w) * 0.5;
 
-        for j in 0..k_cap_steps {
-            let theta1 = angle_n + (j as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
-            let theta2 = angle_n + ((j + 1) as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
+            for j in 0..k_cap_steps {
+                let theta1 = angle_n + (j as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
+                let theta2 = angle_n + ((j + 1) as f32) * 2.0 * std::f32::consts::PI / (k_cap_steps as f32);
 
-            dst.push(TrailVertex {
-                position: [sn.x, sn.y],
-                color: colors[num_samples - 1],
-                tex: [blurs[num_samples - 1], 0.0],
-            });
-            dst.push(TrailVertex {
-                position: [sn.x + theta1.cos() * rn, sn.y + theta1.sin() * rn],
-                color: colors[num_samples - 1],
-                tex: [blurs[num_samples - 1], 1.0],
-            });
-            dst.push(TrailVertex {
-                position: [sn.x + theta2.cos() * rn, sn.y + theta2.sin() * rn],
-                color: colors[num_samples - 1],
-                tex: [blurs[num_samples - 1], 1.0],
-            });
+                dst.push(TrailVertex {
+                    position: [sn.x, sn.y],
+                    color: colors[num_samples - 1],
+                    tex: [blurs[num_samples - 1], 0.0],
+                });
+                dst.push(TrailVertex {
+                    position: [sn.x + theta1.cos() * rn, sn.y + theta1.sin() * rn],
+                    color: colors[num_samples - 1],
+                    tex: [blurs[num_samples - 1], 1.0],
+                });
+                dst.push(TrailVertex {
+                    position: [sn.x + theta2.cos() * rn, sn.y + theta2.sin() * rn],
+                    color: colors[num_samples - 1],
+                    tex: [blurs[num_samples - 1], 1.0],
+                });
+            }
+        } else {
+            // --- Connected Segments Style ---
+            // --- 1. SEGMENT RECTANGLES ---
+            for i in 0..num_samples - 1 {
+                let s_cur = &self.samples[i];
+                let s_next = &self.samples[i + 1];
+
+                let dx = s_next.x - s_cur.x;
+                let dy = s_next.y - s_cur.y;
+                let len = (dx * dx + dy * dy).sqrt();
+
+                let (nx, ny) = if len > 0.1 {
+                    (-dy / len, dx / len)
+                } else {
+                    (s_cur.nx, s_cur.ny)
+                };
+
+                let w_cur = (config.trail_width * layer.width_factor * apply_fade_curve(s_cur.progress, config.fade_mode) * (1.0 + (s_cur.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w);
+                let w_next = (config.trail_width * layer.width_factor * apply_fade_curve(s_next.progress, config.fade_mode) * (1.0 + (s_next.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w);
+
+                let half_w_cur = w_cur * 0.5;
+                let half_w_next = w_next * 0.5;
+
+                let col_cur = colors[i];
+                let col_next = colors[i + 1];
+                let blur_cur = blurs[i];
+                let blur_next = blurs[i + 1];
+
+                let a = [s_cur.x + nx * half_w_cur, s_cur.y + ny * half_w_cur];
+                let b = [s_cur.x - nx * half_w_cur, s_cur.y - ny * half_w_cur];
+                let c = [s_next.x + nx * half_w_next, s_next.y + ny * half_w_next];
+                let d = [s_next.x - nx * half_w_next, s_next.y - ny * half_w_next];
+
+                // Triangle 1: A, B, C
+                dst.push(TrailVertex { position: a, color: col_cur, tex: [blur_cur, 1.0] });
+                dst.push(TrailVertex { position: b, color: col_cur, tex: [blur_cur, -1.0] });
+                dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
+
+                // Triangle 2: B, D, C
+                dst.push(TrailVertex { position: b, color: col_cur, tex: [blur_cur, -1.0] });
+                dst.push(TrailVertex { position: d, color: col_next, tex: [blur_next, -1.0] });
+                dst.push(TrailVertex { position: c, color: col_next, tex: [blur_next, 1.0] });
+            }
+
+            // --- 2. ROUND JOINS (Circles at all sample points) ---
+            let k_join_steps = 8;
+            for i in 0..num_samples {
+                let s = &self.samples[i];
+                let col = colors[i];
+                let blur = blurs[i];
+                let w = (config.trail_width * layer.width_factor * apply_fade_curve(s.progress, config.fade_mode) * (1.0 + (s.speed / 20.0).min(1.0) * config.velocity_width_multiplier)).max(min_w);
+                let r = w * 0.5;
+
+                for j in 0..k_join_steps {
+                    let theta1 = (j as f32) * 2.0 * std::f32::consts::PI / (k_join_steps as f32);
+                    let theta2 = ((j + 1) as f32) * 2.0 * std::f32::consts::PI / (k_join_steps as f32);
+
+                    dst.push(TrailVertex {
+                        position: [s.x, s.y],
+                        color: col,
+                        tex: [blur, 0.0],
+                    });
+                    dst.push(TrailVertex {
+                        position: [s.x + theta1.cos() * r, s.y + theta1.sin() * r],
+                        color: col,
+                        tex: [blur, 1.0],
+                    });
+                    dst.push(TrailVertex {
+                        position: [s.x + theta2.cos() * r, s.y + theta2.sin() * r],
+                        color: col,
+                        tex: [blur, 1.0],
+                    });
+                }
+            }
         }
     }
 
@@ -1103,7 +1179,7 @@ impl OverlayRenderer {
             });
         }
 
-        let num_circle_instances = circle_instances.len().min(2048);
+        let num_circle_instances = circle_instances.len().min(8192);
         if num_circle_instances > 0 {
             queue.write_buffer(&self.circle_instance_buffer, 0, bytemuck::cast_slice(&circle_instances[..num_circle_instances]));
         }
