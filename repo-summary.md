@@ -5,8 +5,8 @@ This file contains high-level metadata, line counts, sizes, and descriptions for
 ## Overall Project Statistics
 
 - **Total Scanned Files**: 30
-- **Total Lines of Code/Config**: 6788 lines
-- **Total Repository Size**: 208.03 KB
+- **Total Lines of Code/Config**: 6917 lines
+- **Total Repository Size**: 218.2 KB
 
 ## Repository File Metadata Table
 
@@ -23,7 +23,7 @@ This file contains high-level metadata, line counts, sizes, and descriptions for
 | `dev_scripts/cargo_run.bat` | 33 | 0.69 KB | 2026-05-29 02:03:56 | CMD script to compile and run application with custom log levels |
 | `dev_scripts/cargo_run.ps1` | 44 | 1.03 KB | 2026-05-29 02:06:02 | PowerShell script to compile and run application with custom log levels |
 | `dev_scripts/generate_repomix.bat` | 22 | 0.49 KB | 2026-05-29 02:31:20 | CMD batch wrapper script to run the Repomix generation workflow |
-| `dev_scripts/generate_repomix.ps1` | 196 | 8.99 KB | 2026-05-29 02:31:47 | PowerShell script to auto-generate repository summaries and pack with Repomix |
+| `dev_scripts/generate_repomix.ps1` | 219 | 10.02 KB | 2026-05-29 02:39:31 | PowerShell script to auto-generate repository summaries and pack with Repomix |
 | `dev_scripts/update_dependencies.bat` | 19 | 0.46 KB | 2026-05-29 01:54:27 | CMD script to dynamically update dependencies to latest compatible versions |
 | `dev_scripts/update_dependencies.ps1` | 28 | 1 KB | 2026-05-29 01:54:27 | PowerShell script to dynamically update dependencies to latest compatible versions |
 | `memory.md` | 109 | 9.33 KB | 2026-05-29 02:13:52 | Architectural decision log and research log for structural tracking |
@@ -39,7 +39,7 @@ This file contains high-level metadata, line counts, sizes, and descriptions for
 | `project_cursor/src/overlay/shader.wgsl` | 81 | 2.41 KB | 2026-05-29 01:54:27 | WebGPU shader (WGSL); particle trails, ripples, and glow rendering on the GPU |
 | `project_cursor/src/tracker.rs` | 41 | 1.2 KB | 2026-05-29 02:00:02 | Global mouse coordinate and click tracking using polling (device_query) |
 | `project_cursor/src/tray.rs` | 84 | 2.69 KB | 2026-05-29 01:54:27 | System tray initialization, menu actions, and tray icon rendering |
-| `README.md` | 124 | 5.64 KB | 2026-05-29 02:21:03 | Core project documentation, build guides, and repository goals |
+| `README.md` | 230 | 14.78 KB | 2026-05-29 02:38:41 | Core project documentation, build guides, and repository goals |
 | `repomix.config.json` | 43 | 0.98 KB | 2026-05-29 02:31:27 | Repomix configuration file (styles, includes, and ignores) |
 | `repomix-instruction.md` | 30 | 2.62 KB | 2026-05-29 02:20:42 | AI instruction sheet for context and style guides |
 

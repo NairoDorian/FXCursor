@@ -23,11 +23,21 @@ try {
     $allFiles = ($trackedFiles + $untrackedFiles) | Select-Object -Unique | Sort-Object
 
     # Ignore list from repomix.config.json
-    $ignorePatterns = @(
-        "target/", "**/target/", "**/*.rs.bk", ".DS_Store", "Thumbs.db", 
-        "project_cursor/config.ron", "repomix-output.md", "repomix-output-compressed.md", 
-        "repomix-output.json", "repo-summary.md", "original_mods/"
-    )
+    $ignorePatterns = @()
+    if (Test-Path "repomix.config.json") {
+        try {
+            $config = Get-Content "repomix.config.json" -Raw | ConvertFrom-Json
+            if ($config.ignore -and $config.ignore.customPatterns) {
+                $ignorePatterns = $config.ignore.customPatterns
+            }
+        } catch {
+            Write-Host "Failed to parse repomix.config.json: $_" -ForegroundColor Yellow
+        }
+    }
+
+    # Add default code-based ignores to ensure repomix-output and temp files are never scanned
+    $ignorePatterns += @("repo-summary.md", "repomix-output.md", "repomix-output-compressed.md", "repomix-output.json")
+    $ignorePatterns = $ignorePatterns | Select-Object -Unique
 
     $filesToScan = @()
     foreach ($file in $allFiles) {
@@ -36,13 +46,26 @@ try {
             continue
         }
         
+        $normalizedPath = $file.Replace("\", "/")
+        
         # Check against ignores
         $ignored = $false
         foreach ($pattern in $ignorePatterns) {
-            # Basic wildcard matching
-            if ($file -like $pattern -or $file -like "*$pattern*" -or ($pattern.EndsWith("/") -and $file.StartsWith($pattern))) {
-                $ignored = $true
-                break
+            # Convert glob patterns with double asterisks to simple single asterisk for PowerShell -like matching
+            $psPattern = $pattern.Replace("**", "*")
+            
+            # If pattern ends with /, also match anything starting with that prefix
+            if ($psPattern.EndsWith("/")) {
+                $prefix = $psPattern
+                if ($normalizedPath.StartsWith($prefix) -or $normalizedPath -like $psPattern -or $normalizedPath -like "*$psPattern*") {
+                    $ignored = $true
+                    break
+                }
+            } else {
+                if ($normalizedPath -like $psPattern -or $normalizedPath -like "*$psPattern*") {
+                    $ignored = $true
+                    break
+                }
             }
         }
         if (-not $ignored) {
