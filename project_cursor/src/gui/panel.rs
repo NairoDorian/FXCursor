@@ -79,14 +79,6 @@ pub fn show_settings_panel(ctx: &egui::Context, config: &mut AppConfig, config_c
                     let prev_min_w = config.min_trail_width;
                     let prev_vel_w = config.velocity_width_multiplier;
                     let prev_vel_a = config.velocity_alpha_multiplier;
-                    let prev_style = config.trail_style;
-
-                    ui.horizontal(|ui| {
-                        ui.label("Trail Style:");
-                        ui.selectable_value(&mut config.trail_style, 0, "🎀 Ribbon");
-                        ui.selectable_value(&mut config.trail_style, 1, "⚪ Overlapping Circles");
-                    });
-                    ui.separator();
 
                     ui.horizontal(|ui| {
                         ui.label("Trail Length:");
@@ -195,7 +187,6 @@ pub fn show_settings_panel(ctx: &egui::Context, config: &mut AppConfig, config_c
                         || (config.min_trail_width - prev_min_w).abs() > 0.001
                         || (config.velocity_width_multiplier - prev_vel_w).abs() > 0.001
                         || (config.velocity_alpha_multiplier - prev_vel_a).abs() > 0.001
-                        || config.trail_style != prev_style
                     {
                         *config_changed = true;
                     }

@@ -58,7 +58,6 @@ pub struct AppConfig {
     pub velocity_width_multiplier: f32,
     pub velocity_alpha_multiplier: f32,
     pub layers: [LayerConfig; 4],
-    pub trail_style: u32,       // 0: Continuous Ribbon, 1: Overlapping Circles
 
     // Squishy Cursor Head
     pub head_enabled: bool,
@@ -171,7 +170,6 @@ impl Default for AppConfig {
                     end_blur: 0.1,
                 },
             ],
-            trail_style: 0,
 
             head_enabled: false,
             head_filled: false,

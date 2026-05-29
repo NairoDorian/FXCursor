@@ -98,8 +98,9 @@ fn vs_circle(model: CircleVertexInput) -> CircleVertexOutput {
 
 @fragment
 fn fs_circle(in: CircleVertexOutput) -> @location(0) vec4<f32> {
+    let r = max(in.radius, vec2<f32>(0.001, 0.001));
     let len = length(in.local_pos);
-    let d_norm = length(in.local_pos / in.radius);
+    let d_norm = length(in.local_pos / r);
     
     var dist = -1.0;
     if (len > 0.0 && d_norm > 0.0) {
@@ -107,11 +108,7 @@ fn fs_circle(in: CircleVertexOutput) -> @location(0) vec4<f32> {
     }
     
     var alpha = 0.0;
-    if (in.thickness < -1.0) {
-        // Blurred filled circle
-        let blur = clamp(abs(in.thickness) - 1.0, 0.001, 1.0);
-        alpha = 1.0 - smoothstep(1.0 - blur, 1.0, d_norm);
-    } else if (in.thickness < 0.0) {
+    if (in.thickness < 0.0) {
         // Filled circle/ellipse
         alpha = 1.0 - smoothstep(-1.0, 1.0, dist);
     } else {

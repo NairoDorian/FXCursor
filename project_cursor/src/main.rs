@@ -36,6 +36,18 @@ fn main() {
 
     // Get screen dimensions of primary monitor for Window B (Overlay)
     let primary_monitor = event_loop.primary_monitor();
+    
+    let monitor_refresh_rate = primary_monitor
+        .as_ref()
+        .and_then(|m| m.refresh_rate_millihertz())
+        .map(|mhz| (mhz as f32 / 1000.0).round() as u32)
+        .unwrap_or(60)
+        .clamp(30, 360);
+    log::info!("Detected primary monitor refresh rate: {} Hz", monitor_refresh_rate);
+
+    let active_interval = std::time::Duration::from_secs_f32(1.0 / monitor_refresh_rate as f32);
+    let idle_interval = std::time::Duration::from_secs_f32(1.0 / 60.0);
+
     let (overlay_size, overlay_pos) = if let Some(ref monitor) = primary_monitor {
         (monitor.size(), monitor.position())
     } else {
@@ -104,7 +116,11 @@ fn main() {
     log::info!("Initialization complete. Running event loop...");
 
     let mut last_frame_time = std::time::Instant::now();
-    let frame_interval = std::time::Duration::from_secs_f32(1.0 / 120.0); // Target 120Hz physics update
+    let mut current_interval = active_interval;
+    let mut last_mouse_pos = (0.0f32, 0.0f32);
+    let mut last_buttons = vec![false; 5];
+    let mut last_config_change_time: Option<std::time::Instant> = None;
+    let mut is_animating = false;
 
     let run_result = event_loop.run(move |event, elwt| {
         match event {
@@ -129,36 +145,66 @@ fn main() {
                     }
                 }
 
-                // Smooth physics pacing (120Hz update)
+                // Smooth physics pacing (Adaptive FPS)
                 let now = std::time::Instant::now();
-                if now.duration_since(last_frame_time) >= frame_interval {
+                if now.duration_since(last_frame_time) >= current_interval {
                     last_frame_time = now;
 
                     // Update global cursor coordinates
                     let (global_x, global_y, buttons) = mouse_tracker.update();
+
+                    // Check if mouse moved or buttons changed
+                    let mouse_moved = (global_x - last_mouse_pos.0).abs() > 0.001 || (global_y - last_mouse_pos.1).abs() > 0.001;
+                    let buttons_changed = buttons != last_buttons.as_slice();
+
+                    last_mouse_pos = (global_x, global_y);
+                    last_buttons.clear();
+                    last_buttons.extend_from_slice(buttons);
+
+                    // If config changed from GUI, request save and repaint
+                    if config_changed {
+                        gui_window.window.request_redraw();
+                        last_config_change_time = Some(now);
+                        config_changed = false;
+                    }
+
+                    // Debounced saving of config (500ms delay)
+                    if let Some(change_time) = last_config_change_time {
+                        if now.duration_since(change_time) >= std::time::Duration::from_millis(500) {
+                            log::info!("Debounce time elapsed, saving configuration to disk...");
+                            if let Err(e) = config.save() {
+                                log::warn!("Failed to auto-save config: {}", e);
+                            }
+                            last_config_change_time = None;
+                        }
+                    }
 
                     // Convert to local overlay window space
                     let overlay_pos = overlay_window.window.inner_position().unwrap_or_default();
                     let local_x = global_x - overlay_pos.x as f32;
                     let local_y = global_y - overlay_pos.y as f32;
 
-                    // Trigger physics update (Left click or any click is mapped to active clicked response)
-                    overlay_window.renderer.update_physics((local_x, local_y), buttons, &config);
+                    // We need to render if mouse moved, buttons changed, or there is an ongoing animation
+                    let needs_redraw = mouse_moved || buttons_changed || is_animating || last_config_change_time.is_some();
 
-                    // Render overlay frame directly to bypass OS event-throttling on focus loss
-                    overlay_window.render(&device, &queue, &config);
-                    if config_changed {
-                        gui_window.window.request_redraw();
-                        // Auto-save config to disk on every change
-                        if let Err(e) = config.save() {
-                            log::warn!("Failed to auto-save config: {}", e);
-                        }
-                        config_changed = false;
+                    if needs_redraw {
+                        // Trigger physics update
+                        overlay_window.renderer.update_physics((local_x, local_y), &last_buttons, &config);
+
+                        // Render overlay frame directly to bypass OS event-throttling on focus loss
+                        overlay_window.render(&device, &queue, &config);
+
+                        // Query if we should keep animating in the next frames
+                        is_animating = overlay_window.renderer.is_animating(&config);
+                        current_interval = active_interval;
+                    } else {
+                        // Slow down to 60Hz idle check when inactive (no animations, no movement)
+                        current_interval = idle_interval;
                     }
                 }
 
                 // Set next wake up time
-                let next_frame_time = last_frame_time + frame_interval;
+                let next_frame_time = last_frame_time + current_interval;
                 elwt.set_control_flow(ControlFlow::WaitUntil(next_frame_time));
             }
 
