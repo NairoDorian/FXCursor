@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 echo === Starting CursorFX Build Process ===
 
-cd %~dp0\project_cursor
+cd %~dp0\..\project_cursor\src-tauri
 
 :: Defaults
 set MODE=release

@@ -1,99 +1,108 @@
 # Build and Update Instructions
 
-This repository contains scripts to automate building, testing, and updating dependencies for the Cross-Platform Rust WebGPU Cursor FX application.
+This repository contains scripts to automate building, testing, and updating dependencies for the CursorFX application.
 
-## 1. Build Scripts (`build.ps1` and `build.bat`)
+---
 
-The build scripts automate native compilation and target configuration. They support both **Development/Debug** (keeps debug console windows, includes symbols) and **Production/Release** (fastest execution speed, hides debug consoles) modes.
+## 1. V3 Build Pipeline (Bun + Tauri V2)
 
-### Usage in PowerShell:
+### Development
+```powershell
+# Install Bun dependencies
+bun install
+
+# Start Vite dev server (frontend only)
+bun run dev
+
+# Start Tauri dev mode (frontend + Rust backend)
+bun run tauri dev
+```
+
+### Production Build
+```powershell
+# TypeScript check + Vite build
+bun run build
+
+# Tauri release build (bundled binary)
+bun run tauri build
+```
+
+The Tauri dev server runs Vite on `http://localhost:1420` with HMR enabled.
+
+---
+
+## 2. Rust Build Scripts (dev_scripts/)
+
+The scripts in `dev_scripts/` provide pure-Rust build commands for the `src-tauri/` directory:
+
+| Script | Purpose | Arguments |
+|--------|---------|-----------|
+| `build.ps1` / `build.bat` | Clean release/debug build | `-Target native/win/linux/mac`, `-Mode release/debug` |
+| `cargo_build.ps1` / `cargo_build.bat` | Check + clippy + build | Targets: `native`, `win`, `linux`, `mac` |
+| `cargo_check.ps1` / `cargo_check.bat` | Type check + clippy + docs | N/A |
+| `cargo_run.ps1` / `cargo_run.bat` | Cargo run shortcut | N/A |
+| `update_dependencies.ps1` / `update_dependencies.bat` | Upgrade Cargo.toml deps to latest | N/A |
+| `generate_repomix.ps1` / `generate_repomix.bat` | Generate AI-ready repo pack | N/A |
+
+### PowerShell Usage
 ```powershell
 # Build for native host in release mode (default)
-.\build.ps1
+.\dev_scripts\build.ps1
 
-# Build for native host in debug mode (development)
-.\build.ps1 -Mode debug
-
-# Target Windows in release mode
-.\build.ps1 -Target win
-
-# Target Windows in debug mode
-.\build.ps1 -Target win -Mode debug
+# Build for native host in debug mode
+.\dev_scripts\build.ps1 -Mode debug
 
 # Target Linux in release mode
-.\build.ps1 -Target linux
+.\dev_scripts\build.ps1 -Target linux
 ```
 
-### Usage in Command Prompt (CMD):
+### CMD Usage
 ```cmd
-:: Build for native host in release mode
-build.bat
+:: Build for native host
+dev_scripts\build.bat
 
 :: Build for native host in debug mode
-build.bat debug
-
-:: Target Windows in release mode
-build.bat win
-
-:: Target Windows in debug mode
-build.bat win debug
+dev_scripts\build.bat debug
 ```
 
 ---
 
-## 2. Windows 11 Shell Visibility Behavior (Debug vs. Release)
+## 3. Cross-Compilation Targets
 
-The project leverages conditional compilation tags to handle debug console outputs dynamically:
-- **Debug Build**: Spawns a standard Windows console. You will see real-time logger outputs (`INFO`, `WARN`, etc.) in the terminal.
-- **Release Build**: Completely hides the console window (`windows_subsystem = "windows"`). The program runs entirely in the background and is only visible in the system tray and overlay.
+By default, scripts invoke `rustup target add <target>` to install toolchains.
 
----
+### A. Windows (`x86_64-pc-windows-msvc`)
+- Requires MSVC build tools (Visual Studio or Rust's Windows build tools)
 
-## 3. Cross-Compilation Target Setup
+### B. Linux (`x86_64-unknown-linux-gnu`)
+- Use WSL2 for native Linux compilation
+- Or use the `cross` crate: `cargo install cross --locked && cross build --target x86_64-unknown-linux-gnu --release`
 
-By default, the scripts will invoke `rustup target add <target>` to install target toolchains.
-
-> [!NOTE]
-> Cross-compiling from a Windows host to other operating systems requires installing target-specific linkers and SDKs.
-
-### A. Windows Target (`x86_64-pc-windows-msvc`)
-- Requires MSVC build tools (installed automatically with Visual Studio or Rust's Windows build tools).
-
-### B. Linux Target (`x86_64-unknown-linux-gnu`)
-- Requires a GCC compiler and linker targeting Linux.
-- **Recommended Setup**:
-  1. Use Windows Subsystem for Linux (WSL) to compile natively inside a Linux environment.
-  2. Or use the `cross` crate (a docker-based toolchain wrapper):
-     ```bash
-     cargo install cross --locked
-     cross build --target x86_64-unknown-linux-gnu --release
-     ```
-
-### C. macOS Target (`x86_64-apple-darwin` / `aarch64-apple-darwin`)
-- Requires Xcode SDK and macOS linker toolchains.
-- **Recommended Setup**:
-  - Compile natively on a macOS machine.
-  - Or use a cross-compiler toolchain like `cargo-zigbuild` with Zig as the linker:
-    ```bash
-    cargo install cargo-zigbuild --locked
-    cargo zigbuild --target x86_64-apple-darwin --release
-    ```
+### C. macOS (`x86_64-apple-darwin` / `aarch64-apple-darwin`)
+- Compile natively on macOS hardware
+- Or use `cargo-zigbuild`: `cargo install cargo-zigbuild --locked && cargo zigbuild --target x86_64-apple-darwin --release`
 
 ---
 
-## 4. Dependencies Update Scripts (`update_dependencies.ps1` and `update_dependencies.bat`)
+## 4. Dependency Updates
 
-The updater scripts dynamically fetch the latest available versions of all crates in `Cargo.toml` without hardcoding constraint versions.
-
-### How it works:
-1. Verifies if `cargo-edit` (which provides `cargo-upgrade`) is installed. If missing, it installs it automatically via `cargo install cargo-edit --locked`.
-2. Runs `cargo upgrade --to-latest` which modifies `Cargo.toml` to bump all dependencies to their newest versions.
-3. Runs `cargo update` to update `Cargo.lock`.
-
-### Usage:
+### Rust (Cargo)
 ```powershell
-.\update_dependencies.ps1
+.\dev_scripts\update_dependencies.ps1
 ```
-```cmd
-update_dependencies.bat
+This runs `cargo upgrade --to-latest` (requires `cargo-edit`) followed by `cargo update`.
+
+### Bun (Frontend)
+```bash
+bun update
 ```
+This updates all packages in `package.json` to their latest semver-compatible versions and regenerates `bun.lock`.
+
+---
+
+## 5. Windows 11 Notes
+
+- **Release builds** use `windows_subsystem = "windows"` (no console window)
+- **Debug builds** show the console for `env_logger` output
+- Tauri V2 handles the subsystem attribute automatically via `tauri.conf.json`
+- If running on NVIDIA GPU, the NVAPI fix in `src-tauri/src/overlay/mod.rs` programmatically sets Vulkan presentation mode to "Prefer Native" (requires admin privileges once)

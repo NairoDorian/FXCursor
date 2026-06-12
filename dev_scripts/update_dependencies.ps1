@@ -12,7 +12,7 @@ if (-not (Get-Command "cargo-upgrade" -ErrorAction SilentlyContinue)) {
 }
 
 # Navigate to project_cursor
-Push-Location "$PSScriptRoot/project_cursor"
+Push-Location "$PSScriptRoot/../project_cursor/src-tauri"
 
 try {
     Write-Host "Upgrading all dependencies in Cargo.toml to latest compatible versions..." -ForegroundColor Yellow

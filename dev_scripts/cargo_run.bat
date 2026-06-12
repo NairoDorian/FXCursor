@@ -23,7 +23,7 @@ echo Mode  : !MODE!
 echo Log   : RUST_LOG=!RUST_LOG!
 echo.
 
-cd %~dp0\project_cursor
+cd %~dp0\..\project_cursor\src-tauri
 
 set RUST_LOG=!RUST_LOG!
 cargo run !CARGO_FLAGS!

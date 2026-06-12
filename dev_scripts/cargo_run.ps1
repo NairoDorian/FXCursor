@@ -27,7 +27,7 @@ Write-Host ""
 
 $env:RUST_LOG = $Log
 
-Push-Location "$PSScriptRoot/project_cursor"
+Push-Location "$PSScriptRoot/../project_cursor/src-tauri"
 
 try {
     if ($Release) {

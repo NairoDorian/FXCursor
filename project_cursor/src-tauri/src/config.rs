@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerConfig {
@@ -12,6 +12,12 @@ pub struct LayerConfig {
     pub alpha_factor: f32,
     pub start_blur: f32,
     pub end_blur: f32,
+    #[serde(default)]
+    pub rainbow_enabled: bool,
+    #[serde(default)]
+    pub rainbow_hue_offset: f32,
+    #[serde(default)]
+    pub rainbow_speed_mult: f32,
 }
 
 impl Default for LayerConfig {
@@ -24,6 +30,9 @@ impl Default for LayerConfig {
             alpha_factor: 1.0,
             start_blur: 0.1,
             end_blur: 0.1,
+            rainbow_enabled: false,
+            rainbow_hue_offset: 0.0,
+            rainbow_speed_mult: 1.0,
         }
     }
 }
@@ -32,24 +41,23 @@ impl Default for LayerConfig {
 #[serde(default)]
 pub struct AppConfig {
     pub enabled: bool,
-    pub effect_type: u32,       // 0: Ribbon Trail, 1: Ripple, 2: Glow
-    pub trail_color: [f32; 4],  // RGBA [0.0 - 1.0] (Used for single glow or overall default)
+    pub effect_type: u32,
+    pub trail_color: [f32; 4],
     pub trail_length: u32,
-    pub trail_width: f32,       // Master reference cursor size
-    pub speed: f32,             // Not used directly in ribbon spring model, but preserved for general
-    pub friction: f32,          // Preserved
-    pub gravity: f32,           // Preserved
-    pub ripple_radius: f32,     // Preserved
-    pub click_response: bool,   // Ripple on click
+    pub trail_width: f32,
+    pub speed: f32,
+    pub friction: f32,
+    pub gravity: f32,
+    pub ripple_radius: f32,
+    pub click_response: bool,
 
-    // Ribbon Trail specific
     pub head_spring: f32,
     pub head_friction: f32,
     pub body_spring: f32,
     pub body_friction: f32,
     pub position_skip: u32,
     pub interpolation_steps: u32,
-    pub fade_mode: u32,         // 0: Linear, 1: Ease-Out, 2: Exponential, 3: Sigmoid
+    pub fade_mode: u32,
     pub enable_gradient: bool,
     pub rainbow_mode: bool,
     pub rainbow_speed: f32,
@@ -59,7 +67,6 @@ pub struct AppConfig {
     pub velocity_alpha_multiplier: f32,
     pub layers: [LayerConfig; 4],
 
-    // Squishy Cursor Head
     pub head_enabled: bool,
     pub head_filled: bool,
     pub head_color: [f32; 4],
@@ -68,23 +75,20 @@ pub struct AppConfig {
     pub head_squish_intensity: f32,
     pub head_squish_smoothing: f32,
 
-    // Click Ripples (custom colors)
     pub ripple_left_color: [f32; 4],
     pub ripple_right_color: [f32; 4],
     pub ripple_middle_color: [f32; 4],
-    pub ripple_duration: f32,   // seconds
+    pub ripple_duration: f32,
     pub ripple_start_width: f32,
 
-    // Click Particles
     pub particle_enabled: bool,
     pub particle_count: u32,
     pub particle_speed: f32,
-    pub particle_lifetime: f32, // seconds
+    pub particle_lifetime: f32,
     pub particle_size: f32,
     pub particle_friction: f32,
     pub particle_gravity: f32,
 
-    // Satellite Orbitals
     pub satellite_enabled: bool,
     pub satellite_count: u32,
     pub satellite_orbit_diameter: f32,
@@ -98,6 +102,8 @@ pub struct AppConfig {
     pub satellite_show_orbit_ring: bool,
     pub satellite_ring_width: f32,
     pub satellite_ring_color: [f32; 4],
+
+    pub start_minimized: bool,
 }
 
 impl Default for AppConfig {
@@ -105,7 +111,7 @@ impl Default for AppConfig {
         Self {
             enabled: true,
             effect_type: 0,
-            trail_color: [0.0, 0.8, 1.0, 1.0], // Neon cyan
+            trail_color: [0.0, 0.8, 1.0, 1.0],
             trail_length: 50,
             trail_width: 40.0,
             speed: 1.0,
@@ -120,7 +126,7 @@ impl Default for AppConfig {
             body_friction: 30.0,
             position_skip: 0,
             interpolation_steps: 8,
-            fade_mode: 3, // Sigmoid
+            fade_mode: 3,
             enable_gradient: true,
             rainbow_mode: false,
             rainbow_speed: 2.0,
@@ -129,45 +135,45 @@ impl Default for AppConfig {
             velocity_width_multiplier: 0.5,
             velocity_alpha_multiplier: 0.1,
             layers: [
-                // Layer 1 (Outer Glow)
                 LayerConfig {
                     enabled: true,
-                    start_color: [0.0, 0.8, 1.0, 1.0], // Neon cyan
+                    start_color: [0.0, 0.8, 1.0, 1.0],
                     end_color: [0.0, 0.8, 1.0, 0.0],
                     width_factor: 1.5,
                     alpha_factor: 1.0,
                     start_blur: 0.39,
                     end_blur: 0.5,
+                    ..Default::default()
                 },
-                // Layer 2 (Mid Layer)
                 LayerConfig {
                     enabled: true,
-                    start_color: [0.0, 0.0, 0.0, 1.0], // Black
+                    start_color: [0.0, 0.0, 0.0, 1.0],
                     end_color: [0.0, 0.0, 0.0, 0.0],
                     width_factor: 0.9,
                     alpha_factor: 1.0,
                     start_blur: 0.1,
                     end_blur: 0.1,
+                    ..Default::default()
                 },
-                // Layer 3 (Core)
                 LayerConfig {
                     enabled: true,
-                    start_color: [1.0, 1.0, 1.0, 1.0], // White
-                    end_color: [0.0, 0.8, 1.0, 0.0],   // Fade to transparent cyan
+                    start_color: [1.0, 1.0, 1.0, 1.0],
+                    end_color: [0.0, 0.8, 1.0, 0.0],
                     width_factor: 0.5,
                     alpha_factor: 1.0,
                     start_blur: 0.1,
                     end_blur: 0.1,
+                    ..Default::default()
                 },
-                // Layer 4 (Inner Core)
                 LayerConfig {
                     enabled: true,
-                    start_color: [0.0, 0.0, 0.0, 1.0], // Black
+                    start_color: [0.0, 0.0, 0.0, 1.0],
                     end_color: [0.0, 0.0, 0.0, 1.0],
                     width_factor: 0.15,
                     alpha_factor: 1.0,
                     start_blur: 0.1,
                     end_blur: 0.1,
+                    ..Default::default()
                 },
             ],
 
@@ -180,8 +186,8 @@ impl Default for AppConfig {
             head_squish_smoothing: 50.0,
 
             ripple_left_color: [1.0, 1.0, 1.0, 1.0],
-            ripple_right_color: [1.0, 0.46, 0.46, 1.0], // FFFF7777
-            ripple_middle_color: [1.0, 1.0, 0.4, 1.0],  // FFFFFF66
+            ripple_right_color: [1.0, 0.46, 0.46, 1.0],
+            ripple_middle_color: [1.0, 1.0, 0.4, 1.0],
             ripple_duration: 0.6,
             ripple_start_width: 8.0,
 
@@ -205,34 +211,44 @@ impl Default for AppConfig {
             satellite_dual_speed: 1.0,
             satellite_show_orbit_ring: false,
             satellite_ring_width: 1.0,
-            satellite_ring_color: [1.0, 1.0, 1.0, 0.27], // 44FFFFFF
+            satellite_ring_color: [1.0, 1.0, 1.0, 0.27],
+
+            start_minimized: false,
         }
     }
 }
 
 impl AppConfig {
+    fn get_config_path() -> PathBuf {
+        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "CursorFX", "CursorFX") {
+            proj_dirs.config_dir().join("config.ron")
+        } else {
+            PathBuf::from("config.ron")
+        }
+    }
+
     pub fn load_or_default() -> Self {
-        let path = Path::new("config.ron");
+        let path = Self::get_config_path();
         if path.exists() {
-            if let Ok(mut file) = File::open(path) {
-                let mut contents = String::new();
-                if file.read_to_string(&mut contents).is_ok() {
-                    if let Ok(config) = ron::from_str(&contents) {
-                        return config;
-                    }
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if let Ok(config) = ron::from_str(&contents) {
+                    return config;
                 }
             }
         }
-        
+
         let default_config = Self::default();
         let _ = default_config.save();
         default_config
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let path = Path::new("config.ron");
+        let path = Self::get_config_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let serialized = ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::default())?;
-        let mut file = File::create(path)?;
+        let mut file = fs::File::create(&path)?;
         file.write_all(serialized.as_bytes())?;
         Ok(())
     }

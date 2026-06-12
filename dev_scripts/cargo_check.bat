@@ -18,7 +18,7 @@ echo.
 echo === CursorFX Verification Suite ===
 echo.
 
-cd %~dp0\project_cursor
+cd %~dp0\..\project_cursor\src-tauri
 
 :: ── Step 1: cargo check ──────────────────────────────────────────────────────
 echo ^>^>^> Step 1/3 — cargo check --all-targets

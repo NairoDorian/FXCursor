@@ -34,7 +34,7 @@ Write-Host "Target : ${BOLD}$Target${RESET}"
 Write-Host "Mode   : ${BOLD}$Mode${RESET}"
 Write-Host ""
 
-Push-Location "$PSScriptRoot/project_cursor"
+Push-Location "$PSScriptRoot/../project_cursor/src-tauri"
 $buildPassed = $true
 
 try {

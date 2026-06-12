@@ -98,9 +98,8 @@ fn vs_circle(model: CircleVertexInput) -> CircleVertexOutput {
 
 @fragment
 fn fs_circle(in: CircleVertexOutput) -> @location(0) vec4<f32> {
-    let r = max(in.radius, vec2<f32>(0.001, 0.001));
     let len = length(in.local_pos);
-    let d_norm = length(in.local_pos / r);
+    let d_norm = length(in.local_pos / in.radius);
     
     var dist = -1.0;
     if (len > 0.0 && d_norm > 0.0) {

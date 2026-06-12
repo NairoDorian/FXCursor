@@ -1,14 +1,41 @@
-# Rust build artifacts
+# target
 target/
 **/target/
+
+# dependencies
+node_modules/
+bun.lock
+bun.lockb
+
+# build output
+dist/
+**/dist/
+
+# Tauri
+src-tauri/target/
+
+# Rust
 **/*.rs.bk
 
-# OS temporary files
+# env
+.env
+.env.*
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Local configuration files
+# Local config overrides
 project_cursor/config.ron
+config.ron
 
-# Repomix generated output
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Repomix
 repomix-output.md
+repomix-output-compressed.md
+repomix-output.json

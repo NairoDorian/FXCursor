@@ -47,7 +47,7 @@ echo Target : !TARGET!
 echo Mode   : !MODE!
 echo.
 
-cd %~dp0\project_cursor
+cd %~dp0\..\project_cursor\src-tauri
 
 :: ── Pre-build verification ─────────────────────────────────────────────────
 if "!SKIP_CHECK!"=="0" (

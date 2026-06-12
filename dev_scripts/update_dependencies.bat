@@ -1,7 +1,7 @@
 @echo off
 echo === Starting Dependencies Update Process ===
 
-cd %~dp0\project_cursor
+cd %~dp0\..\project_cursor\src-tauri
 
 where cargo-upgrade >nul 2>nul
 if %errorlevel% neq 0 (

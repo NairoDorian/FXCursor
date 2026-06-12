@@ -28,7 +28,7 @@ Write-Host ""
 Write-Host "${BOLD}${CYAN}=== CursorFX Verification Suite ===${RESET}"
 Write-Host ""
 
-Push-Location "$PSScriptRoot/project_cursor"
+Push-Location "$PSScriptRoot/../project_cursor/src-tauri"
 $allPassed = $true
 
 try {

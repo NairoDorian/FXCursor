@@ -1,109 +1,114 @@
 # Architectural Memory & Decisions Log
 
-This document tracks design decisions, hardware interactions, crate evaluations, and system resource budgets for the **Cross-Platform Rust WebGPU Cursor FX** application.
+This document tracks design decisions, hardware interactions, crate evaluations, and system resource budgets for the Cross-Platform CursorFX application.
 
 ---
 
-## 1. Architectural History: From Tauri to Pure Rust
+## 1. Architectural History
 
-| Architecture | Front-end Tech | Graphics Tech | RAM Profile | Startup Latency | Key Constraints / Issues |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Old V1/V2** | Tauri, Bun, SolidJS, HTML/CSS | GDI+, D3D11 | ~150 - 250 MB | ~1.2s - 2.0s | Platform-locked (Windows 11), heavy Webview memory footprint, complex node modules, build lag. |
-| **New V3 (Selected)** | `egui` (Immediate Rust UI) | `wgpu` (WGSL Shaders) | **< 30 MB** | **~0.1s - 0.2s** | Global input permission (macOS), Wayland sandboxing restrictions (Linux). |
+| Version | Shell | Frontend | Graphics | RAM | Startup | Notes |
+|---------|-------|----------|----------|-----|---------|-------|
+| **V1** (Legacy) | Tauri V1 | SolidJS + Bun | GDI+, D3D11 | ~150–250 MB | ~1.2–2.0s | Windows-only, Windhawk DLLs |
+| **V2** (Pure Rust) | winit 0.29 | egui 0.26 | wgpu 0.19 | <30 MB | ~0.1–0.2s | Cross-platform, no webview |
+| **V3** (Current) | Tauri V2 | React 19 + TW4 | wgpu 24 | ~80–120 MB | ~0.5–1.0s | Best DX, polished UI, cross-platform |
 
-### Key Reasons for Choosing Pure Rust (`winit` + `wgpu` + `egui`):
-1. **WebGPU Driver Performance**: Renders natively on Metal (macOS), Vulkan (Linux/Windows), or DX12 (Windows) via `wgpu` without being limited by Webview browser sandboxing or lack of modern graphics feature flags in system webviews.
-2. **RAM Footprint**: Webview-based configurations require spawning Chromium (Webview2) render processes. Moving UI rendering into an `egui` layer running on the same graphics context as the overlay eliminates Webview2 completely.
-3. **Packaging Simplicity**: Generates a single compact binary (~10-15MB after optimizations like `panic = "abort"` and `opt-level = "z"`), removing Node/Bun dependencies.
+### Why V3 (Tauri V2 + React)?
+
+1. **Developer Experience**: Hot Module Replacement, TypeScript, React DevTools, browser-based debugging make iteration dramatically faster than egui.
+2. **UI Polish**: TailwindCSS 4 enables pixel-perfect design with dark theme, responsive layout, and animated transitions that egui cannot match.
+3. **Tauri V2 Maturity**: V2 features native tray, multi-window, IPC streaming, plugin system, and reduced webview overhead compared to V1.
+4. **Ecosystem**: Access to the full npm/Bun ecosystem for utilities, state management, and testing. The React component model maps naturally to settings panels.
+5. **WebGPU Integration**: wgpu 24 brings improved DX12, Vulkan 1.3, and Metal 3 support. The Rust backend keeps the same WGSL shaders unchanged.
 
 ---
 
-## 2. Resource & Performance Budgets
+## 2. Resource & Performance Budgets (V3)
 
-- **Memory Usage (RAM)**: `< 30 MB` (Goal: `< 20 MB` at idle).
-- **CPU Utilization**: `< 1%` under active rendering (using frame-pacing and lazy event-loop handling for the Config Panel).
-- **GPU Utilization**: `< 2%` on typical dedicated or modern integrated GPUs (e.g., Intel Iris Xe, Apple M-series, Nvidia GTX/RTX).
-- **Frame Pacing**: Lock rendering of Overlay to target display refresh rate (e.g., 60Hz, 120Hz, 144Hz) using `wgpu`'s VSync-aware presenter (`PresentMode::AutoFifo` or `PresentMode::Fifo`).
+| Metric | Target | Notes |
+|--------|--------|-------|
+| **RAM (total process)** | <120 MB | Webview ~60MB + GPU resources ~30MB + Rust ~10MB |
+| **CPU (idle)** | <1% | Vite dev server excluded (dev only) |
+| **CPU (active rendering)** | <2% | Frame pacing at display refresh rate |
+| **GPU (active)** | <3% | Instanced rendering, adaptive LOD |
+| **Binary size (release)** | ~15–20 MB | LTO + strip + panic=abort |
+| **Startup time** | <1.0s | Tauri V2 cold start |
+| **Frame pacing** | VSync-aligned | PresentMode::Fifo |
 
 ---
 
 ## 3. Crate Evaluation & Risk Matrix
 
-### A. Window Management (`winit` vs. `sdl2` vs. `glfw`)
-- **Chosen**: `winit`
-- **Rationale**: De-facto standard in the Rust ecosystem. Native support for multi-window setups, raw-window-handle bindings for `wgpu`, and advanced OS window attributes (`set_cursor_hittest` for click-through, transparency flags).
-- **Risk**: Minor platform-specific quirks (e.g., Linux transparency under Wayland requires compositor cooperation).
+### A. Window Management (Tauri V2)
+- **Chosen**: Tauri V2 (`tauri = "2"`)
+- **Rationale**: Built on `tao` (successor to winit). Multi-window support. Native window handle access for wgpu. System tray, global shortcuts, and menu APIs built-in.
+- **Risk**: Webview adds ~60MB overhead. `Tauri 2.x` is less battle-tested than winit. Some platform-specific transparency quirks (Wayland).
 
-### B. Graphics API (`wgpu` vs. `glow` / `OpenGL` vs. `ash` / `Vulkan`)
-- **Chosen**: `wgpu`
-- **Rationale**: Offers a modern, unified WebGPU API. Safer than raw Vulkan (`ash`) or OpenGL (`glow`), with compile-time shader validation (WGSL). Excellent performance across Metal (macOS), Vulkan, and DirectX 12.
+### B. Graphics API (wgpu 24)
+- **Chosen**: wgpu 24
+- **Rationale**: Latest stable release. Improved DX12 backend. Synchronous adapter/device creation. WGSL shaders compile at build time.
+- **Changes from 0.19**: `DeviceDescriptor` gained `memory_hints`. `ShaderModuleDescriptor` gained `compilation_options`. Surface creation uses `SurfaceTarget`.
 
-### C. Configuration GUI (`egui` vs. `iced` vs. `slint`)
-- **Chosen**: `egui`
-- **Rationale**: Extremely fast development cycle with immediate-mode design. Direct integration with `wgpu` via `egui-wgpu`. Does not require complex state machines for simple slider-driven settings.
+### C. Configuration GUI (React 19 + TailwindCSS 4)
+- **Chosen**: React 19 + Vite 6 + TailwindCSS 4
+- **Rationale**: Industry standard. Tailwind v4 uses CSS-based configuration (`@theme`) eliminating `tailwind.config.ts`. The `@tailwindcss/vite` plugin provides zero-config integration.
+- **Risk**: Webview rendering overhead. IPC latency for config updates (mitigated by optimistic UI updates).
 
-### D. Global Input (`device_query` vs. `rdev` vs. native API hooks)
-- **Chosen**: `device_query`
-- **Rationale**: Simple API, does not require starting complex event loops or hooking keypresses, minimizing the security footprint (does not require keylogger permissions on Windows, though macOS accessibility may still prompt).
-- **Risk**: On Linux Wayland, global mouse coordinates are blocked by the OS security model. Wayland users may require fallback mechanisms.
+### D. Global Input (device_query 2)
+- **Chosen**: `device_query = "2"`
+- **Rationale**: Same proven approach as V2. Polls global mouse position without hooking OS events. Works on all platforms (Wayland requires compositor cooperation).
+- **Risk**: Linux Wayland blocks global mouse polling. Fallback: overlay window mouse events (but click-through prevents this).
 
 ---
 
-## 4. Platform-Specific Design Patterns
+## 4. Platform-Specific Design
 
-### Windows 11 (Primary Target)
-- Uses `WindowAttributes::with_transparent(true)` and `window.set_cursor_hittest(false)`.
-- DirectX 12 backend used by `wgpu`.
-- System tray runs via `tray-icon` linked into the standard winit event loop.
+### Windows 11 (Primary)
+- DX12 backend via wgpu 24
+- Overlay window: `WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`
+- WndProc subclassing: `WM_NCHITTEST → HTTRANSPARENT` for click-through
+- NVIDIA NVAPI fix: Sets Vulkan present method to "Prefer Native" to prevent DXGI swapchain wrapping
+- Config saved to `%APPDATA%/CursorFX/CursorFX/config.ron`
 
 ### macOS (Metal)
-- Requires enabling `NSApplication` activation policy to handle menu bar and tray behavior correctly.
-- Transparency and click-through are supported using Cocoa window styling flags.
+- Metal 3 backend via wgpu 24
+- Transparency via `NSWindow` properties
+- Accessibility permissions required for `device_query` global mouse polling
+- Config saved to `~/Library/Application Support/com.CursorFX.CursorFX/config.ron`
 
-### Linux (Vulkan / Wayland & X11)
-- Under X11, click-through works out of the box using X11 window properties.
-- Under Wayland, transparent overlays require the compositor to support `ext-window-input-v1` or similar protocols. A fallback configuration to run with window borders or hover-only tracking is planned if click-through is rejected by the window manager.
-
----
-
-## 5. Overlay Click-Through & Taskbar Hiding Troubleshooting
-
-The Windows 11 click-through overlay and taskbar-hiding functionality required solving three hidden platform-level conflicts:
-
-### A. wgpu Surface Configuration Style Resets
-- **The Problem**: The `WS_EX_TRANSPARENT` and `WS_EX_LAYERED` styles were initially applied once at raw window creation. However, when `wgpu` configures the render swapchain (`surface.configure`), it re-initializes DXGI/Vulkan surface descriptors, which silently resets the window's extended style styles (`GWL_EXSTYLE`) back to default.
-- **The Resolution**: We moved the styling overrides directly into `new` and `resize` routines of `OverlayWindow` and `GuiWindow`, ensuring they are reapplied immediately *after* any `wgpu` surface configuring completes.
-
-### B. winit WndProc Message Interception
-- **The Problem**: Even with the correct extended styles, `winit`'s internal window procedure intercepts mouse events. When Windows queries the cursor position using `WM_NCHITTEST`, `winit`'s procedure caught it and returned `HTCLIENT` (client area hit) because the internal `cursor_hittest` flag was set to true. This overrode the OS-level `WS_EX_TRANSPARENT` behavior.
-- **The Resolution**: We combined two solutions:
-  1. Call `window.set_cursor_hittest(false)` to update `winit`'s internal hit-test flag, preventing it from returning `HTCLIENT`.
-  2. Use `SetWindowLongPtrW` with `GWLP_WNDPROC` to subclass the window procedure natively, intercepting `WM_NCHITTEST` and returning `HTTRANSPARENT` directly to the OS, bypassing winit's pipeline.
-
-### C. Persistent Taskbar & Alt+Tab Visibility
-- **The Problem**: In Windows 11, clearing `WS_EX_APPWINDOW` and applying `WS_EX_TOOLWINDOW` at window creation wasn't completely persistent, nor did it always succeed if the window was shown before styles were applied. The window manager would keep registering the window's presence in Alt+Tab and the taskbar, or DXGI surface swaps would reset extended style bits.
-- **The Resolution**:
-  1. Used the `WindowBuilderExtWindows::with_skip_taskbar(true)` extension trait to prevent the window from ever entering the taskbar registry during its creation phase.
-  2. Set `WindowExtWindows::set_skip_taskbar(true)` dynamically.
-  3. Created a guard checks structure inside the main rendering loop (`OverlayWindow::render` calling `configure_overlay_window`), which checks `style != new_style` via `GetWindowLongPtrW` and dynamically re-applies style adjustments if any driver/compositor-level event clears them.
-
-### D. Modern DXGI Swapchain & Click-Through Coexistence
-- **The Problem**: Making the overlay window click-through to *other* applications (processes) requires the `WS_EX_LAYERED` style bit. Without `WS_EX_LAYERED`, returning `HTTRANSPARENT` from `WM_NCHITTEST` only clicks through to parent/owner windows of the same process. However, calling `SetWindowLongPtrW` and `SetWindowPos` on every frame to ensure these styles are present forces the Windows DWM to constantly invalidate the window frame/composition buffers, breaking DXGI composition presenting and making the rendering disappear.
-- **The Resolution**:
-  1. **Bitmask Checks**: Implemented a precise style diff checks mask in `configure_overlay_window` (`style & required_flags == required_flags` and checking `WS_EX_APPWINDOW` is absent). This ensures `SetWindowLong` and `SetWindowPos` are only called *once* during start/resize, and *never* on normal frames.
-  2. **WndProc Monitor**: Monitored the window's current procedure (`GWLP_WNDPROC`). If winit/DXGI resets it to winit's default during surface recreation, the code automatically re-subclasses it, storing the new winit pointer in `PREV_WNDPROC`.
-  3. **Bypassing Focus Event Throttling**: Moved the overlay rendering calls directly into the 120Hz update tick under `Event::AboutToWait` in `main.rs`, instead of relying on `request_redraw()`. This prevents the OS from throttling or discarding paint events when the transparent overlay window loses input focus.
+### Linux (Vulkan)
+- Vulkan 1.3 backend via wgpu 24
+- X11: Click-through works via X11 window properties
+- Wayland: Requires compositor support for `ext-window-input-v1` or similar protocols
+- Config saved to `~/.config/CursorFX/config.ron`
 
 ---
 
-## 6. Build & Dependency Update Infrastructure
+## 5. Build & Dependency Infrastructure
 
-### A. Automation Scripts (`build.ps1/bat`, `cargo_build.ps1/bat`, `cargo_check.ps1/bat`, `cargo_run.ps1/bat`)
-- **Location**: All scripts have been consolidated under `dev_scripts/`.
-- **Decision**: Implemented native Windows batch script wrappers and PowerShell scripts.
-- **Why**: Navigates into `project_cursor` automatically and compiles via cargo. Supports target-specific toolchain configurations (`native`, `win`, `linux`, `mac`) to prepare the codebase for multi-platform distribution.
+### Tauri V2 Build Pipeline
+1. `bun run dev` starts Vite dev server on port 1420
+2. `bun run tauri dev` starts Tauri dev mode (compiles Rust, launches Vite)
+3. `bun run tauri build` creates production release binary
 
-### B. Dependency Updater (`update_dependencies.ps1/bat`)
-- **Location**: `dev_scripts/update_dependencies.ps1` and `dev_scripts/update_dependencies.bat`.
-- **Decision**: Leverages `cargo-edit`'s `cargo upgrade --to-latest` followed by `cargo update`.
-- **Why**: Restricting version constraints to hardcoded strings prevents automated security and API performance patches from downstream libraries. Bumping constraints in `Cargo.toml` automatically keeps the program up-to-date with upstream changes on the next build.
+### Dependency Upgrades
+- Rust: `cargo upgrade --to-latest` + `cargo update`
+- Bun: `bun update` (updates package.json + lockfile)
+
+### Dev Scripts
+Located in `dev_scripts/`:
+- `build.ps1`/`build.bat` - Cargo build automation
+- `cargo_check.ps1`/`cargo_check.bat` - Fast cargo check + clippy
+- `update_dependencies.ps1`/`update_dependencies.bat` - Automated Rust dep upgrades
+- See `dev_scripts/build_instructions.md` for full documentation
+
+---
+
+## 6. Known Issues & Mitigations
+
+| Issue | Platform | Mitigation |
+|-------|----------|------------|
+| Webview RAM overhead | All | Acceptable trade-off for dev experience. Release builds minimize with LTO |
+| Wayland global mouse | Linux | Fallback to relative overlay window coordinates |
+| NVIDIA DXGI wrapping | Windows | NVAPI fix in `overlay/mod.rs` |
+| wgpu surface style resets | Windows | Guard loop re-applies styles after each configure |
+| macOS accessibility prompt | macOS | Required for device_query; user must grant in System Preferences |

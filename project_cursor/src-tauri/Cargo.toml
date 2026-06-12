@@ -1,0 +1,44 @@
+[package]
+name = "project_cursor"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "project_cursor_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.12"
+log = "0.4"
+env_logger = "0.11"
+directories = "6"
+bytemuck = { version = "1", features = ["derive"] }
+raw-window-handle = "0.6"
+device_query = "4"
+pollster = "0.4"
+
+# Graphics
+wgpu = "29"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+] }
+
+[package.metadata.tauri]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

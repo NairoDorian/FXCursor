@@ -21,7 +21,7 @@ if ($Mode -eq "release") {
 }
 
 # Change directory to project folder
-Push-Location "$PSScriptRoot/project_cursor"
+Push-Location "$PSScriptRoot/../project_cursor/src-tauri"
 
 try {
     if ($Target -eq "native") {

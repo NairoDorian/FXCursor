@@ -1,0 +1,27 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities",
+  "windows": ["main", "overlay"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-decorations",
+    "core:window:allow-set-skip-taskbar",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-create",
+    "core:window:allow-destroy",
+    "core:tray:allow-new",
+    "core:tray:allow-set-menu",
+    "core:tray:allow-set-icon",
+    "core:tray:allow-set-tooltip",
+    "core:tray:allow-set-show-menu-on-left-click"
+  ]
+}

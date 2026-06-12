@@ -22,7 +22,19 @@
     "README.md",
     "memory.md",
     "repomix-instruction.md",
-    "repo-summary.md"
+    "repo-summary.md",
+    "dev_scripts/build_instructions.md",
+    "project_cursor/src-tauri/**/*.rs",
+    "project_cursor/src-tauri/**/*.wgsl",
+    "project_cursor/src-tauri/Cargo.toml",
+    "project_cursor/src-tauri/tauri.conf.json",
+    "project_cursor/src/**/*.tsx",
+    "project_cursor/src/**/*.ts",
+    "project_cursor/src/**/*.css",
+    "project_cursor/index.html",
+    "project_cursor/package.json",
+    "project_cursor/vite.config.ts",
+    "project_cursor/tsconfig.json"
   ],
   "ignore": {
     "useGitignore": true,
@@ -37,7 +49,10 @@
       "repomix-output.md",
       "repomix-output-compressed.md",
       "repomix-output.json",
-      "original_mods/**"
+      "original_mods/**",
+      "node_modules/**",
+      "dist/**",
+      "bun.lock"
     ]
   }
 }
