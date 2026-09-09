@@ -69,6 +69,7 @@ impl ApplicationHandler for App {
             self.tray = Some(TrayManager::new());
 
             let gpu = pollster::block_on(GpuContext::new(window.clone()));
+            #[cfg_attr(not(windows), allow(unused_mut))]
             let mut renderer = OverlayRenderer::new(&gpu.device, gpu.config.format);
 
             #[cfg(windows)]
