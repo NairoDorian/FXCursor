@@ -71,7 +71,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 
 ### Windows 11 (primary, verified)
 - Virtual desktop bounds from `GetSystemMetrics(SM_*VIRTUALSCREEN)`; shaders subtract the virtual origin so negative monitor coordinates work.
-- Config: `%APPDATA%\com.fxcursor.app\config.json`.
+- Config: `%APPDATA%\com.nairodorian.fxcursor\config.json`.
 - Historical NVIDIA/DXGI Vulkan wrapping issue (V3) has not reproduced with the Tauri transparent window; NVAPI workaround not carried over.
 
 ### macOS (unverified)

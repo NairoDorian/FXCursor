@@ -43,7 +43,7 @@
 
 ### Changed
 
-- **Renamed FXCursor** (was CursorFX Studio): crates `fxcursor-protocol` / `fxcursor-render` / `fxcursor-daemon`, binary `fxcursor`, product name `FXCursor`, identifier `com.fxcursor.app` — the previous `com.cursorfx.studio` configuration is adopted automatically on first launch. The repository was restructured so the app is the root; the V3 React app, the original Windhawk mods and the old build scripts moved to `legacy/`; CI, scripts and docs updated for the new layout. New home: `https://github.com/NairoDorian/FXCursor`.
+- **Renamed FXCursor** (was CursorFX Studio): crates `fxcursor-protocol` / `fxcursor-render` / `fxcursor-daemon`, binary `fxcursor`, product name `FXCursor`, identifier `com.nairodorian.fxcursor` — configurations from the earlier `com.fxcursor.app` and `com.cursorfx.studio` identifiers are adopted automatically on first launch. The repository was restructured so the app is the root; the V3 React app, the original Windhawk mods and the old build scripts moved to `legacy/`; CI, scripts and docs updated for the new layout. New home: `https://github.com/NairoDorian/FXCursor`.
 
 - All Markdown documentation rewritten to describe the implemented architecture (single-process Tauri app, CPU physics, experimental daemon) instead of the V4 specification targets; `ARCHITECTURE.md` regenerated with accurate per-file descriptions.
 - `scripts/before-commit.ts` label corrected to the actual 7 gates.

@@ -19,9 +19,9 @@ pub const CONFIG_FILE_NAME: &str = "config.json";
 /// written once the stream of updates has been quiet for this long.
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(400);
 
-/// Identifier the app shipped under before it was renamed FXCursor; its config directory is
-/// adopted on first launch so nobody loses their settings.
-const LEGACY_IDENTIFIER: &str = "com.cursorfx.studio";
+/// Identifiers the app shipped under before (newest first); the first config directory found
+/// is adopted on first launch so nobody loses their settings.
+const LEGACY_IDENTIFIERS: &[&str] = &["com.fxcursor.app", "com.cursorfx.studio"];
 
 /// Resolves `<config_dir>/config.json`, creating the directory if needed. On the very first
 /// launch after the rename the previous installation's config is copied over.
@@ -35,20 +35,21 @@ pub fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Copies `../<legacy identifier>/config.json` next to `path` when it exists.
+/// Copies the first existing `../<legacy identifier>/config.json` next to `path`.
 fn migrate_legacy_config(dir: &Path, path: &Path) {
-    let Some(legacy) = dir
-        .parent()
-        .map(|parent| parent.join(LEGACY_IDENTIFIER).join(CONFIG_FILE_NAME))
+    let Some(parent) = dir.parent() else {
+        return;
+    };
+    let Some(legacy) = LEGACY_IDENTIFIERS
+        .iter()
+        .map(|id| parent.join(id).join(CONFIG_FILE_NAME))
+        .find(|candidate| candidate.exists())
     else {
         return;
     };
-    if !legacy.exists() {
-        return;
-    }
     match std::fs::copy(&legacy, path) {
         Ok(_) => log::info!(
-            "[settings] adopted configuration from the previous CursorFX install at {}",
+            "[settings] adopted configuration from the previous install at {}",
             legacy.display()
         ),
         Err(err) => log::warn!("[settings] could not copy {}: {err}", legacy.display()),

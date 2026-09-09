@@ -98,7 +98,7 @@ pub fn list(app: &AppHandle) -> Vec<PresetInfo> {
             }
         })
         .collect();
-    presets.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    presets.sort_by_key(|p| p.name.to_lowercase());
     presets
 }
 

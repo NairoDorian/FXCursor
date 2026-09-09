@@ -121,7 +121,7 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 - [x] Tests: stop (nothing ever in front of the pointer), reversal (passed nodes stay behind), lead-node monotonicity, frame-rate independence (60 vs 240 fps), chain growth, wall clamping. 18 render-crate tests.
 - [x] **Burst snapshots**: `--capture-burst N --capture-interval ms` writes `<stem>_NN.png` at a fixed cadence; PNG encoding runs on a worker thread so the capture no longer stalls the physics it records; each capture logs a one-line chain summary (`chain nodes=… first5=… farthest=…`).
 - [x] Verified with 30-frame bursts at 50 ms: stop, reversal and 90° turn all keep a clean rounded tip at the pointer (`scripts/snapshots/`).
-- [x] Renamed **FXCursor**: crates `fxcursor-{protocol,render,daemon}`, binary `fxcursor`, identifier `com.fxcursor.app` (the previous `com.cursorfx.studio` config is adopted on first launch), product name FXCursor, window title "FXCursor Studio". Repository restructured: the app is the root, V3 / original mods / old scripts live under `legacy/`, CI runs at the root.
+- [x] Renamed **FXCursor**: crates `fxcursor-{protocol,render,daemon}`, binary `fxcursor`, identifier `com.nairodorian.fxcursor` (the previous `com.cursorfx.studio` config is adopted on first launch), product name FXCursor, window title "FXCursor Studio". Repository restructured: the app is the root, V3 / original mods / old scripts live under `legacy/`, CI runs at the root.
 
 ---
 
@@ -138,8 +138,9 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 | Live run (Windows) | `bun run tauri dev`                                     | ✅ virtual desktop (−308, 0) 2560×2680 across two monitors, 240 Hz pacing, RTX 4070 (Vulkan), hook installed, config adopted from the CursorFX install, bindings regenerated |
 | Trail transients   | `scripts/snapshots/snapshot_motion.ps1` (30-frame bursts) | ✅ stop / reversal / 90° turn keep a clean rounded tip at the pointer; HUD verified with `--apply` + `--capture`     |
 | Clippy             | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ clean                                                                                                              |
-| Release build      | `bun run tauri build`                                   | ✅ before the rename: 5 m 48 s, 11.4 MB exe, NSIS installer 3.5 MB; re-run under the `fxcursor` name via CI           |
-| Portable zip       | `bun run package:portable`                              | ✅ `fxcursor-portable-<version>-win-x64.zip` (built from the release exe)                                              |
+| Release build      | `bun run tauri build`                                   | ✅ 6 m 22 s, `fxcursor.exe` 11.7 MB, NSIS installer `FXCursor_0.5.0_x64-setup.exe` 3.6 MB                              |
+| Portable zip       | `bun run package:portable`                              | ✅ `fxcursor-portable-0.5.0-win-x64.zip` 4.6 MB                                                                        |
+| GitHub Actions     | `.github/workflows/ci.yml`                              | 🟡 first runs on the new repository: Windows job reached clippy (one lint fixed), Ubuntu job needed the 24.04 package list — fixed in the follow-up commit |
 
 ---
 
@@ -249,7 +250,7 @@ bun run package:portable   # portable zip (exe + portable marker + Data/)
 
 Configuration file locations:
 
-- Windows: `%APPDATA%\com.fxcursor.app\config.json`
-- macOS: `~/Library/Application Support/com.fxcursor.app/config.json`
-- Linux: `~/.config/com.fxcursor.app/config.json`
+- Windows: `%APPDATA%\com.nairodorian.fxcursor\config.json`
+- macOS: `~/Library/Application Support/com.nairodorian.fxcursor/config.json`
+- Linux: `~/.config/com.nairodorian.fxcursor/config.json`
 - Portable: `<exe dir>/Data/config.json` when a file named `portable` sits next to the executable.
