@@ -37,3 +37,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Runtime crash log written next to the dev binary
+panic.log
