@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["unicorn", "typescript", "import"],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "pedantic": "off",
+    "perf": "warn",
+    "style": "off",
+    "restriction": "off"
+  },
+  "rules": {
+    "no-unused-vars": "off",
+    "typescript/no-unused-vars": "off",
+    "typescript/no-explicit-any": "off",
+    "no-console": "off",
+    "unicorn/prefer-module": "off",
+    "import/no-unassigned-import": "off",
+    "no-await-in-loop": "off",
+    "no-unassigned-vars": "off",
+    "unicorn/consistent-function-scoping": "off"
+  },
+  "ignorePatterns": ["dist/**", "target/**", "src-tauri/target/**", "node_modules/**", ".docs/**", "src/lib/bindings.ts"]
+}

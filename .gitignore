@@ -1,41 +1,39 @@
-# target
+# Rust
 target/
 **/target/
+**/*.rs.bk
 
-# dependencies
+# JavaScript / Bun (bun.lock is committed for --frozen-lockfile installs)
 node_modules/
-bun.lock
 bun.lockb
 
-# build output
+# Build output
 dist/
 **/dist/
+tsconfig.tsbuildinfo
 
 # Tauri
 src-tauri/target/
 
-# Rust
-**/*.rs.bk
+# Repomix output (ARCHITECTURE.md is generated but committed)
+repomix-output.md
+repomix-output-compressed.md
 
-# env
+# Environment
 .env
 .env.*
 
-# OS
+# Local config overrides
+config.ron
+legacy/project_cursor/config.ron
+
+# Portable-mode data next to a dev binary
+data/
+
+# OS / IDE
 .DS_Store
 Thumbs.db
-
-# Local config overrides
-project_cursor/config.ron
-config.ron
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Repomix
-repomix-output.md
-repomix-output-compressed.md
-repomix-output.json

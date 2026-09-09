@@ -1,114 +1,108 @@
 # Architectural Memory & Decisions Log
 
-This document tracks design decisions, hardware interactions, crate evaluations, and system resource budgets for the Cross-Platform CursorFX application.
+This document tracks design decisions, hardware interactions, crate evaluations, and resource budgets for FXCursor. Updated 2026-09-09 after a full code audit of the V4 codebase (now the repository root).
 
 ---
 
 ## 1. Architectural History
 
-| Version | Shell | Frontend | Graphics | RAM | Startup | Notes |
-|---------|-------|----------|----------|-----|---------|-------|
-| **V1** (Legacy) | Tauri V1 | SolidJS + Bun | GDI+, D3D11 | ~150–250 MB | ~1.2–2.0s | Windows-only, Windhawk DLLs |
-| **V2** (Pure Rust) | winit 0.29 | egui 0.26 | wgpu 0.19 | <30 MB | ~0.1–0.2s | Cross-platform, no webview |
-| **V3** (Current) | Tauri V2 | React 19 + TW4 | wgpu 24 | ~80–120 MB | ~0.5–1.0s | Best DX, polished UI, cross-platform |
+| Version          | Shell        | Frontend             | Graphics            | Physics | RAM (measured/target)          | Notes                                                                                   |
+| ---------------- | ------------ | -------------------- | ------------------- | ------- | ------------------------------ | --------------------------------------------------------------------------------------- |
+| **V0** (mods)    | Windhawk     | none                 | GDI+, D3D11         | CPU     | in-process in explorer.exe     | Windows-only C++ reference for the 4-layer visual design (`legacy/original_mods/`)             |
+| **V1** (Legacy)  | Tauri V1     | SolidJS + Bun        | GDI+, D3D11 DLL     | CPU     | ~150–250 MB                    | Windows-only, injected DLL                                                              |
+| **V2** (Rust)    | winit 0.29   | egui 0.26            | wgpu 0.19           | CPU     | < 30 MB                        | Cross-platform, no webview                                                              |
+| **V3**           | Tauri V2     | React 19 + TW4       | wgpu 29             | CPU     | ~80–120 MB                     | `legacy/project_cursor/`, frozen                                                               |
+| **V4 (current)** | Tauri V2     | SolidJS 2 + native CSS | wgpu 30           | CPU     | ~330 MB RSS in debug (2 webviews); release target < 120 MB | ``. Overlay is a Tauri window + wgpu surface. Daemon is a prototype only. |
+| **V4 (spec)**    | Rust daemon  | SolidJS 2 (transient) | wgpu 30            | GPU compute | < 12 MB daemon             | `docs/V4_ARCHITECTURE_SPECIFICATION.md`; Pillars 1, 2, 4, 6 (non-Windows), 7 not built  |
 
-### Why V3 (Tauri V2 + React)?
+### Why V4 kept the Tauri single-process model for now
 
-1. **Developer Experience**: Hot Module Replacement, TypeScript, React DevTools, browser-based debugging make iteration dramatically faster than egui.
-2. **UI Polish**: TailwindCSS 4 enables pixel-perfect design with dark theme, responsive layout, and animated transitions that egui cannot match.
-3. **Tauri V2 Maturity**: V2 features native tray, multi-window, IPC streaming, plugin system, and reduced webview overhead compared to V1.
-4. **Ecosystem**: Access to the full npm/Bun ecosystem for utilities, state management, and testing. The React component model maps naturally to settings panels.
-5. **WebGPU Integration**: wgpu 24 brings improved DX12, Vulkan 1.3, and Metal 3 support. The Rust backend keeps the same WGSL shaders unchanged.
-
----
-
-## 2. Resource & Performance Budgets (V3)
-
-| Metric | Target | Notes |
-|--------|--------|-------|
-| **RAM (total process)** | <120 MB | Webview ~60MB + GPU resources ~30MB + Rust ~10MB |
-| **CPU (idle)** | <1% | Vite dev server excluded (dev only) |
-| **CPU (active rendering)** | <2% | Frame pacing at display refresh rate |
-| **GPU (active)** | <3% | Instanced rendering, adaptive LOD |
-| **Binary size (release)** | ~15–20 MB | LTO + strip + panic=abort |
-| **Startup time** | <1.0s | Tauri V2 cold start |
-| **Frame pacing** | VSync-aligned | PresentMode::Fifo |
+1. It already works end to end: overlay, rendering, tray, persistence, hotkey, autostart on Windows.
+2. The daemon path needs a native overlay window, an IPC client in the Studio and a process supervisor before it delivers its RAM win; none exist yet.
+3. Extracting a shared `fxcursor-render` crate first lets both paths use one renderer instead of the current ~900-line fork.
 
 ---
 
-## 3. Crate Evaluation & Risk Matrix
+## 2. Resource & Performance Budgets (V4 targets, release build)
 
-### A. Window Management (Tauri V2)
-- **Chosen**: Tauri V2 (`tauri = "2"`)
-- **Rationale**: Built on `tao` (successor to winit). Multi-window support. Native window handle access for wgpu. System tray, global shortcuts, and menu APIs built-in.
-- **Risk**: Webview adds ~60MB overhead. `Tauri 2.x` is less battle-tested than winit. Some platform-specific transparency quirks (Wayland).
+| Metric                   | Target             | Status 2026-09-09                                                         |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------- |
+| RAM (total process)      | < 120 MB           | Not measured in release; debug ~330 MB because the overlay is a webview   |
+| CPU (idle, cursor still) | < 0.5 %            | Loop wakes every 15 ms, does physics on 80 nodes, skips GPU work           |
+| CPU (active)             | < 2 %              | 4 ms loop, CPU ribbon build for 4 layers                                  |
+| GPU (idle)               | 0 %                | ✅ no submissions after 3 settle frames                                    |
+| Frame pacing             | Mailbox, ≤ 2 frames latency | ✅                                                                |
+| Input latency            | < 1 frame          | Polling (4 ms) — clicks shorter than a poll can be missed                 |
+| Startup                  | < 1.0 s            | ~1 s dev; not measured release                                            |
 
-### B. Graphics API (wgpu 24)
-- **Chosen**: wgpu 24
-- **Rationale**: Latest stable release. Improved DX12 backend. Synchronous adapter/device creation. WGSL shaders compile at build time.
-- **Changes from 0.19**: `DeviceDescriptor` gained `memory_hints`. `ShaderModuleDescriptor` gained `compilation_options`. Surface creation uses `SurfaceTarget`.
+---
 
-### C. Configuration GUI (React 19 + TailwindCSS 4)
-- **Chosen**: React 19 + Vite 6 + TailwindCSS 4
-- **Rationale**: Industry standard. Tailwind v4 uses CSS-based configuration (`@theme`) eliminating `tailwind.config.ts`. The `@tailwindcss/vite` plugin provides zero-config integration.
-- **Risk**: Webview rendering overhead. IPC latency for config updates (mitigated by optimistic UI updates).
+## 3. Crate Evaluation & Decisions
 
-### D. Global Input (device_query 2)
-- **Chosen**: `device_query = "2"`
-- **Rationale**: Same proven approach as V2. Polls global mouse position without hooking OS events. Works on all platforms (Wayland requires compositor cooperation).
-- **Risk**: Linux Wayland blocks global mouse polling. Fallback: overlay window mouse events (but click-through prevents this).
+### Windowing: Tauri 2 (`tao`)
+- Overlay = `WebviewWindowBuilder` with `transparent`, `decorations(false)`, `always_on_top`, `skip_taskbar`, `shadow(false)`, `focused(false)`, then `set_ignore_cursor_events(true)` for click-through. No WndProc subclassing (V3's crash source).
+- Cost: an extra WebView2 process for a window that never shows HTML. Decision: accept for now; revisit with a raw HWND/winit overlay (roadmap Phase C).
+
+### Graphics: wgpu 30
+- Backends `DX12 | VULKAN` on Windows (adapter choice left to `HighPerformance` preference; Vulkan was picked on the dev machine), Metal on macOS, Vulkan on Linux.
+- Pre-multiplied alpha composite mode when available, `Mailbox` presentation, `desired_maximum_frame_latency: 2`.
+- Surface loss/outdated → reconfigure in place.
+
+### Input: `device_query` 4
+- Chosen for simplicity and cross-platform coverage. Known limits: polling only, no sub-poll click detection, Wayland unsupported, macOS needs Accessibility permission.
+- Decision: replace on Windows with Raw Input + `MsgWaitForMultipleObjectsEx` (roadmap Phase B); keep `device_query` as the fallback.
+
+### Configuration: JSON + `serde_path_to_error` self-healing
+- `fxcursor-protocol::deserialize_with_self_healing` merges missing keys from defaults and resets only broken fields (up to 64 repair rounds).
+- Storage path: `app_config_dir()/config.json` or `<exe>/Data/config.json` in portable mode. Atomic temp+rename writes. Debounced (400 ms) autosave thread.
+- rkyv / SQLite from the spec were rejected for now: JSON is human-editable, which the self-healing design exists to support.
+
+### OS integrations
+- `tauri-plugin-global-shortcut` 2.3: shortcut string parsed from `general.global_hotkey`; `unregister_all` then `on_shortcut`. Conflicts are logged, not fatal.
+- `tauri-plugin-autostart` 2.5: `LaunchAgent` on macOS, registry Run key on Windows, passes `--minimized`.
+- `tauri-plugin-single-instance`: second launch focuses the Studio window.
+
+### Presets
+- Rust `get_builtin_presets()` is the source of truth; the TS mirror exists only for `bun run dev` browser preview. Roadmap: generate bindings with `tauri-specta` (already a dependency) and drop the mirror.
 
 ---
 
 ## 4. Platform-Specific Design
 
-### Windows 11 (Primary)
-- DX12 backend via wgpu 24
-- Overlay window: `WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`
-- WndProc subclassing: `WM_NCHITTEST → HTTRANSPARENT` for click-through
-- NVIDIA NVAPI fix: Sets Vulkan present method to "Prefer Native" to prevent DXGI swapchain wrapping
-- Config saved to `%APPDATA%/CursorFX/CursorFX/config.ron`
+### Windows 11 (primary, verified)
+- Virtual desktop bounds from `GetSystemMetrics(SM_*VIRTUALSCREEN)`; shaders subtract the virtual origin so negative monitor coordinates work.
+- Config: `%APPDATA%\com.fxcursor.app\config.json`.
+- Historical NVIDIA/DXGI Vulkan wrapping issue (V3) has not reproduced with the Tauri transparent window; NVAPI workaround not carried over.
 
-### macOS (Metal)
-- Metal 3 backend via wgpu 24
-- Transparency via `NSWindow` properties
-- Accessibility permissions required for `device_query` global mouse polling
-- Config saved to `~/Library/Application Support/com.CursorFX.CursorFX/config.ron`
+### macOS (unverified)
+- Metal via wgpu; transparency relies on Tauri's `transparent(true)` (may need the `macos-private-api` feature for a truly transparent window).
+- `device_query` requires Accessibility permission.
+- Virtual bounds currently hardcoded to 1920×1080 — must use `NSScreen` (roadmap Phase E).
 
-### Linux (Vulkan)
-- Vulkan 1.3 backend via wgpu 24
-- X11: Click-through works via X11 window properties
-- Wayland: Requires compositor support for `ext-window-input-v1` or similar protocols
-- Config saved to `~/.config/CursorFX/config.ron`
+### Linux (unverified)
+- X11: transparency needs a compositor and an ARGB visual; click-through needs an input shape.
+- Wayland: no global mouse polling; layer-shell overlay is the intended path.
 
 ---
 
 ## 5. Build & Dependency Infrastructure
 
-### Tauri V2 Build Pipeline
-1. `bun run dev` starts Vite dev server on port 1420
-2. `bun run tauri dev` starts Tauri dev mode (compiles Rust, launches Vite)
-3. `bun run tauri build` creates production release binary
-
-### Dependency Upgrades
-- Rust: `cargo upgrade --to-latest` + `cargo update`
-- Bun: `bun update` (updates package.json + lockfile)
-
-### Dev Scripts
-Located in `dev_scripts/`:
-- `build.ps1`/`build.bat` - Cargo build automation
-- `cargo_check.ps1`/`cargo_check.bat` - Fast cargo check + clippy
-- `update_dependencies.ps1`/`update_dependencies.bat` - Automated Rust dep upgrades
-- See `dev_scripts/build_instructions.md` for full documentation
+- `bun run tauri dev` (Vite on port 1420 + `cargo run`), `bun run build`, `bun run tauri build` (bundling currently disabled in `tauri.conf.json`).
+- `bun run update-deps` probes NPM pre-release dist-tags and Crates.io `newest_version` and then runs typecheck, build, `cargo check`, `cargo test`.
+- `bun run before-commit`: 7 gates (typecheck, lint, tests, build, cargo check, cargo test, version sync).
+- `bun run arch`: regenerates `ARCHITECTURE.md` via Repomix `pack()`.
+- `legacy/dev_scripts/` PowerShell/CMD helpers still point at `legacy/project_cursor/` (legacy).
 
 ---
 
 ## 6. Known Issues & Mitigations
 
-| Issue | Platform | Mitigation |
-|-------|----------|------------|
-| Webview RAM overhead | All | Acceptable trade-off for dev experience. Release builds minimize with LTO |
-| Wayland global mouse | Linux | Fallback to relative overlay window coordinates |
-| NVIDIA DXGI wrapping | Windows | NVAPI fix in `overlay/mod.rs` |
-| wgpu surface style resets | Windows | Guard loop re-applies styles after each configure |
-| macOS accessibility prompt | macOS | Required for device_query; user must grant in System Preferences |
+| Issue                                        | Platform | Mitigation / Plan                                                                   |
+| -------------------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| Overlay webview RAM overhead                 | All      | Accept for now; native overlay window on the roadmap                                |
+| Missed sub-poll clicks                       | All      | Raw Input / low-level hook (Phase B)                                                |
+| Daemon renderer fork drifts from Tauri copy  | —        | Extract `fxcursor-render` crate (Phase C)                                           |
+| Daemon pipe handle double-close, buffer caps | Windows  | Fix when the daemon becomes a real target                                           |
+| `effect_mode`, `fps_counter` unused          | —        | Implement or remove (Phase A)                                                       |
+| Wayland global mouse                         | Linux    | Layer-shell + seat events (Phase E)                                                 |
+| macOS accessibility prompt                   | macOS    | Document; consider `CGEventTap` in the daemon                                       |

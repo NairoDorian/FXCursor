@@ -1,0 +1,5 @@
+[build]
+incremental = true
+
+[future-incompat-report]
+frequency = "always"

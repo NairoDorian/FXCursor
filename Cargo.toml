@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fxcursor-protocol",
+    "crates/fxcursor-render",
+    "crates/fxcursor-daemon",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.5.0"
+edition = "2021"
+authors = ["FXCursor Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/NairoDorian/FXCursor"
+
+[profile.dev]
+opt-level = 0
+debug = 1
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+
+# Heavy dependencies compile with opt-level=3 once
+[profile.release.package."*"]
+opt-level = 3
+codegen-units = 1

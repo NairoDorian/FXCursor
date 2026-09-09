@@ -1,207 +1,179 @@
-# Cross-Platform CursorFX - Tauri V2 + Bun + React + TailwindCSS + wgpu
+# FXCursor
 
-A high-performance, cross-platform cursor effects overlay application built with **Tauri V2**, **Bun**, **Vite**, **React**, and **TailwindCSS** for the configuration UI, with a **Rust + wgpu 24** backend for GPU-accelerated cursor effects.
+[![Tauri 2](https://img.shields.io/badge/Tauri-v2.11-24C8D5?style=flat-square&logo=tauri&logoColor=white)](https://v2.tauri.app)
+[![Bun](https://img.shields.io/badge/Bun-v1.4-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
+[![SolidJS](https://img.shields.io/badge/SolidJS-v2.0.0--rc.4-2c4f7c?style=flat-square&logo=solid&logoColor=white)](https://solidjs.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-v7.1--dev-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![wgpu](https://img.shields.io/badge/wgpu-v30.0-3178C6?style=flat-square&logo=rust&logoColor=white)](https://wgpu.rs)
+[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-black?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org)
+[![Status](https://img.shields.io/badge/status-under%20construction-yellow?style=flat-square)](PROGRESS.md)
 
-The application creates a transparent, fullscreen overlay window that renders particle trails, click ripples, orbiting satellites, and glow effects centered around the cursor — all rendered in real-time via WebGPU (WGSL) shaders. A separate React-based configuration panel provides real-time settings control.
+GPU-accelerated cursor effects for the desktop: a transparent, click-through overlay that renders a 4-layer luminous ribbon trail, a squishy cursor head, click ripples, particle bursts and orbiting satellites, plus a SolidJS 2 settings studio living in the system tray.
 
----
+Built with **Tauri 2**, **Bun**, **SolidJS 2**, **TypeScript 7**, **wgpu 30** (Direct3D 12 / Vulkan / Metal) and **Rust**.
 
-## Core Project Goals
-
-### 1. Cross-Platform: "1 Program Fits All"
-- **Tauri V2** provides platform-native windowing on **Windows 11**, **macOS**, and **Linux**
-- **wgpu 24** renders via Metal (macOS), Vulkan (Linux/Windows), or DX12 (Windows)
-- **Bun** provides fast package management and dev server across all platforms
-- Single source tree compiles to native binaries for all three OS targets
-
-### 2. GPU-Accelerated Real-Time Performance
-- WGSL shaders run particle simulation, ripple mechanics, and ribbon trails on the GPU
-- VSync-aligned rendering at display refresh rate (60–144Hz+)
-- **Ultra-low GPU footprint** via instanced rendering and spline-adaptive vertex counts
-
-### 3. Developer-Friendly: Fast & Easy
-- **Bun** replaces npm for faster installs and dev server startup
-- **Vite 6** with HMR for instant frontend reloads
-- **TailwindCSS 4** with Vite plugin for zero-config styling
-- **TypeScript 5** with strict mode for type safety
+> **Status**: under construction. The single-process Tauri app is fully working on Windows (rendering, persistence, tray, hotkey, autostart). The headless "micro-daemon" described in `docs/V4_ARCHITECTURE_SPECIFICATION.md` is a prototype and is not used by the app yet. See [PROGRESS.md](PROGRESS.md) for the exact state and roadmap.
 
 ---
 
-## Architecture
+## ⚡ Primary Standard: Bun, Testing Command & RTK Rule
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Tauri V2 Process                      │
-│                                                         │
-│  ┌─────────────────┐    ┌───────────────────────────┐   │
-│  │  React Frontend │    │    Rust Backend (wgpu)     │   │
-│  │  (Vite + TW4)   │◄──►│    ┌───────────────────┐  │   │
-│  │  Settings Panel │ IPC│    │  Overlay Window    │  │   │
-│  │  Port 1420      │    │    │  Transparent       │  │   │
-│  └─────────────────┘    │    │  Always-on-Top     │  │   │
-│                         │    │  Click-through     │  │   │
-│                         │    │  Fullscreen        │  │   │
-│                         │    ├───────────────────┤  │   │
-│                         │    │  WGSL Shaders:     │  │   │
-│                         │    │  - Ribbon Trail    │  │   │
-│                         │    │  - SDF Ripples     │  │   │
-│                         │    │  - Circle Instances│  │   │
-│                         │    │  - Glow Aura       │  │   │
-│                         │    └───────────────────┘  │   │
-│                         └───────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Component Breakdown
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Application Shell** | Tauri V2 | Cross-platform window management, system tray, IPC |
-| **Config UI** | React 19 + TailwindCSS 4 | Settings panel with color pickers, sliders, toggles |
-| **Frontend Bundler** | Vite 6 + Bun | Fast builds, HMR, TypeScript compilation |
-| **Rust Backend** | wgpu 24 + device_query 2 | GPU rendering, mouse tracking, physics simulation |
-| **Config Storage** | RON (serde) | Serialized to `~/.config/CursorFX/config.ron` |
-| **System Tray** | Tauri V2 tray API | Quick access to show/hide config, quit |
+> [!CRITICAL]
+> **1. Package Manager**: NEVER use `npm`, `npx`, `yarn`, or `pnpm`. **ALWAYS use `bun`**.
+>
+> **2. Ultimate Testing Command** (run from the repository root):
+>
+> ```bash
+> bun run tauri dev
+> ```
+>
+> **3. Always Pre-Release Dependencies**: keep every NPM and Crates.io dependency at its newest pre-release (`bun run update-deps`). Never downgrade to stable when a pre-release exists.
+>
+> **4. Golden Rule — `rtk` prefix**: prefix shell commands with `rtk` (`rtk git status`, `rtk cargo check --workspace`). Sanctioned `bun run ...` scripts run directly.
+>
+> | ❌ Wrong                  | ✅ Correct                                |
+> | :------------------------ | :---------------------------------------- |
+> | `git status`              | `rtk git status`                          |
+> | `cargo check --workspace` | `rtk cargo check --workspace`             |
+> | `cargo test --workspace`  | `rtk cargo test --workspace`              |
+> | `bun run tauri dev`       | `bun run tauri dev` _(Bun scripts as-is)_ |
 
 ---
 
-## Implemented Features
+## ✨ Features (implemented)
 
-- **Ribbon Trail**: Spring-damper chain simulation with Catmull-Rom spline interpolation, multi-layer rendering with round caps, adaptive vertex quality
-- **Click Ripples**: SDF-based expanding rings on mouse click with configurable duration and colors per button
-- **Glow Aura**: Soft radial glow with exponential falloff centered on cursor
-- **Squishy Cursor Head**: Velocity-responsive squish/stretch ellipse with motion blur
-- **Particle Bursts**: Click-triggered particle system with gravity, friction, and lifetime
-- **Orbiting Satellites**: Configurable count, speed, dual-ring mode, with orbit ring visualization
-- **Rainbow Mode**: HSL hue cycling across trail layers
-- **Adaptive Quality**: Dynamic vertex density based on path curvature and cursor speed
-
-### Settings Panel (React)
-- **General**: Enable/disable FX, choose effect mode (Ribbon/Ripple/Glow)
-- **Trail Physics**: Length, size, spring/damping, position skip, spline smoothness, fade curve
-- **Trail Layers**: 4 independent layers with per-layer color, width, opacity, blur
-- **Cursor Head**: Squishy ellipse with size, intensity, smoothing, fill mode
-- **Ripples & Particles**: Per-button colors, ripple expansion/duration, particle parameters
-- **Satellites**: Count, orbit diameter, size, speed, dual-ring, orbit ring display
+- **4-layer master ribbon**: Outer Glow (150 % width, 39→50 % blur), Mid Shadow (90 %, black), Crisp Core (50 %, white), Inner Spine (15 %, black). Per-layer colours, gradient, alpha, blur; four fade curves; velocity-driven width and alpha. Each layer is a GPU-resolved union of round capsules, so joins and caps are round, hairpins never fold and overlaps never double-blend.
+- **Squishy head**: velocity-elongated SDF ellipse with smoothed rotation.
+- **Click ripples**: expanding anti-aliased rings, colour per mouse button.
+- **Particle bursts**: gravity, friction, random spread, alpha decay.
+- **Satellites**: orbiting bodies with optional orbit ring and counter-rotating dual ring.
+- **Rainbow mode**: HSL cycling with saturation/lightness control, frame-rate independent.
+- **Six presets** (Rust source of truth) and JSON import/export with self-healing.
+- **Persistence**: `config.json` auto-saved (debounced) and repaired field-by-field on load; portable mode via a `portable` marker file.
+- **System tray** (show / toggle / quit), **global toggle hotkey**, **login autostart**, single-instance guard, minimize-to-tray and start-minimized options, `--minimized` flag.
+- **Multi-monitor**: overlay spans the Windows virtual desktop including negative coordinates.
+- **Never-missed clicks (Windows)**: a low-level mouse hook queues every button press; the render thread parks on a condvar while idle and wakes on input.
+- **Typed IPC**: `src/lib/bindings.ts` is generated by `tauri-specta`; a shared fixture keeps Rust and TypeScript defaults identical.
+- **Effect modes**: Full, Ribbon only, Click effects only, Satellites only, Minimal (core + spine), switchable from the header.
+- **Telemetry**: live fps, CPU per frame and geometry counts in the Developer Hub; Rust logs stream into the Dev Console.
+- **Idle friendly**: GPU submissions stop when nothing on screen can change.
+- **Trail physics that never loops at the pointer**: the head follows the jitter-filtered pointer without overshoot, the first `lead_nodes` nodes are pursuit followers, the rest is a spring-damper chain, and no node may overtake its predecessor — stops, reversals and sharp turns keep a clean rounded tip. Fixed 1/120 s sub-steps; frame hitches up to 100 ms are integrated in full.
+- **On-overlay FPS HUD** (`fps_counter`): frames per second drawn on the overlay with a 3×5 bitmap font, anchored to any corner.
+- **Custom presets**: save the current look under a name; user presets live next to `config.json` and appear beside the six built-ins.
+- **In-window shortcuts**: `Ctrl+S` save, `Ctrl+E` toggle effects, `Ctrl+1…9` switch tabs (cheat-sheet in the Hotkeys tab); the tray tooltip shows the live state.
+- **Overlay snapshots**: Developer Hub button or `fxcursor.exe --capture out.png --capture-size 1280x720` while the app runs (screen-capture tools cannot see the GPU overlay). Add `--capture-burst 30 --capture-interval 50` for a flip-book of a transient; `scripts/snapshots/` drives the pointer through stops, reversals, turns, hairpins and loops and builds contact sheets.
+- **Scriptable**: `fxcursor.exe --apply "{\"fps_counter\":{\"enabled\":true}}"` merges any partial configuration into the running app (self-healing, persisted) — handy for automation and for the snapshot tools.
 
 ---
 
-## Directory Structure
+## 🏗️ Architecture (as implemented)
 
-```
-project_cursor/
-├── src-tauri/                    # Rust backend (Tauri V2 + wgpu 24)
-│   ├── Cargo.toml                # Rust dependencies
-│   ├── build.rs                  # Tauri build script
-│   ├── tauri.conf.json           # Tauri V2 configuration
-│   ├── capabilities/
-│   │   └── default.json          # Tauri V2 permission capabilities
-│   ├── icons/                    # Application icons
-│   └── src/
-│       ├── main.rs               # Entry point
-│       ├── lib.rs                # Tauri commands & state management
-│       ├── config.rs             # AppConfig struct + RON serialization
-│       ├── tracker.rs            # Global mouse position tracking
-│       └── overlay/
-│           ├── mod.rs            # Overlay window creation + render loop
-│           ├── renderer.rs       # wgpu pipelines, physics, rendering
-│           └── shader.wgsl       # WGSL vertex/fragment shaders
-├── src/                          # React frontend (Vite + TailwindCSS)
-│   ├── main.tsx                  # React entry point
-│   ├── App.tsx                   # Main application shell
-│   ├── App.css                   # TailwindCSS import
-│   ├── lib/
-│   │   ├── bindings.ts           # TypeScript type definitions
-│   │   └── config.ts             # Default config values
-│   └── components/
-│       ├── GeneralSettings.tsx   # Enabled/effect type toggles
-│       ├── TrailPhysics.tsx      # Spring-damper chain settings
-│       ├── TrailLayers.tsx       # 4-layer color & blur config
-│       ├── CursorHead.tsx        # Squishy head parameters
-│       ├── RipplesParticles.tsx  # Ripple & particle settings
-│       ├── Satellites.tsx        # Orbital satellite config
-│       └── ColorPicker.tsx       # RGBA color input component
-├── index.html                    # Vite entry HTML
-├── package.json                  # Bun dependencies
-├── vite.config.ts                # Vite + React + TailwindCSS config
-├── tsconfig.json                 # TypeScript configuration
-├── config.ron                    # Default runtime config template
-└── run.bat                       # Windows quick-launch helper
+```mermaid
+graph LR
+    subgraph "Tauri 2 process"
+        UI["Studio window<br/>SolidJS 2 dashboard"] -- "invoke(update_config…)" --> ST["Arc&lt;Mutex&lt;AppConfig&gt;&gt;"]
+        ST -- "config-updated event" --> UI
+        ST --> SAVE["Autosave thread<br/>config.json (self-healing)"]
+        ST --> INT["integrations.rs<br/>global hotkey · autostart"]
+        TRAY["System tray"] --> ST
+        ST --> RT["gpu-render-thread<br/>CPU physics → wgpu 30"]
+        RT --> OV["Overlay window<br/>transparent · click-through · always-on-top"]
+    end
 ```
 
+Pipeline per frame (`crates/fxcursor-render/src/renderer.rs`): take the input frame (hook events on Windows) → spawn queued clicks → spring-damper chain → Catmull-Rom resampling from the cursor position (near-duplicate nodes merged) → one tapered round capsule per sample pair and layer + SDF instances → one render pass (per layer: depth max-coverage pre-pass, then colour pass; then billboards) with pre-multiplied alpha → present. Frames are skipped entirely after 3 settle frames when input, config and animation are all static.
+
+The `crates/fxcursor-daemon` crate is an **experimental** standalone winit host for the same `fxcursor-render` renderer, with a JSON named-pipe server. It compiles, but nothing launches or talks to it; the prototype compute shader in the render crate is not dispatched. The roadmap in `PROGRESS.md` covers how it converges with the Tauri path.
+
 ---
 
-## Getting Started
+## 📋 Standard Operating Procedure
 
-### Prerequisites
-- **Rust** (MSRV 1.75+, latest stable recommended)
-- **Bun** (latest, for package management and dev server)
-- **Platform SDKs**: Windows MSVC, macOS Xcode, Linux build-essential
-
-### Quick Start
+```mermaid
+graph TD
+    A["1. Verify env<br/><code>bun --version</code> / <code>rtk cargo --version</code>"] --> B["2. Upgrade deps<br/><code>bun run update-deps</code>"]
+    B --> C["3. Live dev & test<br/><code>bun run tauri dev</code>"]
+    C --> D["4. Quality gates<br/><code>bun run before-commit</code>"]
+    D --> E["5. Version control<br/><code>rtk git status</code> / <code>rtk git commit</code>"]
+```
 
 ```bash
-# Navigate to project directory
-cd project_cursor
-
-# Install frontend dependencies (Bun)
-bun install
-
-# Run in development mode (HMR + hot reload)
+# Step 1
+bun --version && rtk cargo --version
+# Step 2 (optional, bleeding edge)
+bun run update-deps
+# Step 3
 bun run tauri dev
-
-# Build for production
-bun run tauri build
+# Step 4
+bun run typecheck && bun run lint && bun test
+rtk cargo check --workspace && rtk cargo test --workspace
+bun run before-commit        # all gates in one go
+bun run arch                 # refresh ARCHITECTURE.md
+# Step 5
+rtk git status && rtk git add . && rtk git commit -m "feat: ..." && rtk git push
 ```
 
-### Build Commands (via Dev Scripts)
+---
 
-| Script | Purpose |
-|--------|---------|
-| `bun run dev` | Start Vite dev server (port 1420) |
-| `bun run build` | TypeScript check + Vite production build |
-| `bun run tauri dev` | Tauri dev mode (frontend + Rust) |
-| `bun run tauri build` | Tauri production release build |
+## 🔌 IPC surface (`src-tauri/src/lib.rs`)
 
-For the legacy scripts in `dev_scripts/`, see [dev_scripts/build_instructions.md](dev_scripts/build_instructions.md).
+| Command           | Direction         | Purpose                                                                             |
+| :---------------- | :---------------- | :---------------------------------------------------------------------------------- |
+| `get_config`      | UI → Rust         | Current `AppConfig`                                                                 |
+| `update_config`   | UI → Rust         | Replace config; broadcasts + autosaves + syncs hotkey/autostart                     |
+| `toggle_overlay`  | UI → Rust         | Flip `enabled`                                                                      |
+| `reset_defaults`  | UI → Rust         | Factory defaults (persisted)                                                        |
+| `save_config`     | UI → Rust         | Immediate write, returns the file path                                              |
+| `list_presets`    | UI → Rust         | Built-in presets (`PresetInfo[]`)                                                   |
+| `apply_preset`    | UI → Rust         | Apply by id, sets `general.selected_preset`                                         |
+| `import_config`   | UI → Rust         | Self-healing import of a JSON document; returns repaired paths                      |
+| `get_diagnostics` | UI → Rust         | OS, arch, version, portable flag, config path, virtual screen bounds                |
+| `ping`            | UI → Rust         | Latency benchmark                                                                   |
+| `get_recent_logs` | UI → Rust         | Backend log history for the Dev Console                                             |
+| `capture_overlay` | UI → Rust         | Render the current overlay frame to a PNG (crop around the cursor or whole overlay) |
+| `config-updated`  | Rust → UI (event) | Emitted after every change (tray, hotkey, IPC)                                      |
+| `rust-log`        | Rust → UI (event) | Every `log` record from `fxcursor*` targets                                         |
 
 ---
 
-## Configuration
+## 📁 Project layout
 
-The application stores settings in RON format at the platform-specific config directory:
-- **Windows**: `%APPDATA%/CursorFX/CursorFX/config.ron`
-- **macOS**: `~/Library/Application Support/com.CursorFX.CursorFX/config.ron`
-- **Linux**: `~/.config/CursorFX/config.ron`
+The repository root **is** the app (`https://github.com/NairoDorian/FXCursor`). Earlier generations are kept under `legacy/` for reference only.
 
-Settings are auto-saved when clicking "Save Settings" in the config panel, or via the Reset Defaults button.
-
----
-
-## Comparison: V3 (Tauri V2) vs V2 (Pure Rust/winit)
-
-| Aspect | V3 (Current) | V2 (Previous) |
-|--------|-------------|---------------|
-| **App Shell** | Tauri V2 | winit 0.29 event loop |
-| **Config UI** | React 19 + TailwindCSS 4 | egui 0.26 immediate mode |
-| **Sys Tray** | Tauri V2 tray API | tray-icon 0.14 |
-| **Overlay** | Tauri window + wgpu 24 | winit window + wgpu 0.19 |
-| **JS Runtime** | Bun | None |
-| **Dev Experience** | HMR, TypeScript, browser devtools | Rust-only, recompile |
-| **UI Customization** | TailwindCSS utility classes | egui Visuals dark theme |
-| **Build** | `bun run tauri build` | `cargo build --release` |
-| **RAM (idle)** | ~80–120 MB (webview overhead) | <30 MB |
-| **GPU** | wgpu 24 (DX12/Vulkan/Metal) | wgpu 0.19 |
-
----
-
-## Git Setup
-
-```bash
-git init
-git add .
-git commit -m "V3: Tauri V2 + Bun + React + TailwindCSS + wgpu 24"
-git remote add origin https://github.com/NairoDorian/Cross_Platform_Rust_WebGPU_CursorFX.git
-git branch -M main
-git push -u origin main
 ```
+FXCursor/
+├── AGENTS.md / README.md / PROGRESS.md / CHANGELOG.md / ARCHITECTURE.md
+├── docs/                       # V4 specification & comparative research
+├── package.json                # Bun scripts, SolidJS 2, Vite 8, TypeScript 7
+├── src/                        # SolidJS 2 Studio
+│   ├── App.tsx                 # shell, tabs, IPC sync, in-window shortcuts
+│   ├── components/{Common,Preview,Tabs}/
+│   └── lib/{bindings (generated),presets,effectMode,theme,toast,console,tauri}.ts
+├── src-tauri/
+│   ├── capabilities/default.json
+│   ├── tauri.conf.json
+│   └── src/
+│       ├── lib.rs              # commands, tray, persistence wiring, overlay thread
+│       ├── settings_repair.rs  # config store: self-healing load, atomic save, autosave, legacy migration
+│       ├── user_presets.rs     # custom presets stored next to config.json
+│       ├── integrations.rs     # global hotkey + autostart sync
+│       ├── capture.rs          # overlay snapshots and bursts (offscreen render + readback)
+│       ├── display.rs          # virtual desktop bounds, refresh rate, timer resolution
+│       ├── input/{mod.rs,windows.rs}   # InputHub + WH_MOUSE_LL hook
+│       ├── logger.rs · portable.rs · panic_log.rs · webview_hardening.rs · tracker.rs
+│       └── overlay/mod.rs      # surface, render loop, pacing, idle park, frame stats
+├── crates/
+│   ├── fxcursor-protocol/      # AppConfig, presets, self-healing deserializer (shared)
+│   ├── fxcursor-render/        # THE renderer: TrailChain physics, capsule ribbon, SDF, HUD font, shaders
+│   └── fxcursor-daemon/        # experimental headless host using fxcursor-render
+├── scripts/                    # update-deps, before-commit, generate-arch, package-portable, version
+│   └── snapshots/              # PowerShell drivers: trail shapes, motion bursts, contact sheets
+├── test/                       # bun tests + shared Rust ⇄ TS fixtures
+└── legacy/                     # V3 React app (project_cursor), original Windhawk mods, old scripts
+```
+
+---
+
+## 📄 License
+
+MIT License.

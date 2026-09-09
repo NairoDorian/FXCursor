@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies (Tauri 2 / wgpu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libssl-dev pkg-config \
+            libx11-dev libxi-dev libxtst-dev libvulkan-dev
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Bun tests
+        run: bun test
+
+      - name: Vite build
+        run: bun run build
+
+      - name: Cargo check
+        run: cargo check --workspace --all-targets
+
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Cargo tests
+        run: cargo test --workspace
+
+      - name: Shared fixtures are current (Rust ⇄ TypeScript parity)
+        shell: bash
+        run: |
+          cargo run -q -p fxcursor-protocol --example dump_default > /tmp/default_config.json
+          cargo run -q -p fxcursor-render --example dump_mode_masks > /tmp/mode_masks.json
+          diff -u test/fixtures/default_config.json /tmp/default_config.json
+          diff -u test/fixtures/mode_masks.json /tmp/mode_masks.json
+
+  build-windows:
+    name: Release build (Windows)
+    needs: validate
+    runs-on: windows-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: bun install --frozen-lockfile
+      - name: Tauri build (NSIS installer)
+        run: bun run tauri build
+      - name: Portable zip
+        run: bun run package:portable
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: fxcursor-windows
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/fxcursor-portable-*.zip
+          if-no-files-found: warn

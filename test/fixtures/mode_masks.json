@@ -1,0 +1,67 @@
+{
+  "FourLayerGlow": {
+    "head": true,
+    "layers": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "particles": true,
+    "ripples": true,
+    "satellites": true,
+    "trail": true
+  },
+  "Minimal": {
+    "head": true,
+    "layers": [
+      false,
+      false,
+      true,
+      true
+    ],
+    "particles": false,
+    "ripples": false,
+    "satellites": false,
+    "trail": true
+  },
+  "ParticlesOnly": {
+    "head": true,
+    "layers": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "particles": true,
+    "ripples": true,
+    "satellites": false,
+    "trail": false
+  },
+  "Ribbon": {
+    "head": true,
+    "layers": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "particles": false,
+    "ripples": false,
+    "satellites": false,
+    "trail": true
+  },
+  "SatellitesOnly": {
+    "head": true,
+    "layers": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "particles": false,
+    "ripples": false,
+    "satellites": true,
+    "trail": false
+  }
+}

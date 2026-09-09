@@ -1,0 +1,12 @@
+dist
+target
+src-tauri/target
+src-tauri/gen
+node_modules
+bun.lock
+Cargo.lock
+.docs
+.system_generated
+*.log
+ARCHITECTURE.md
+src/lib/bindings.ts

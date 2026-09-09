@@ -1,0 +1,188 @@
+{
+  "enabled": true,
+  "effect_mode": "FourLayerGlow",
+  "general": {
+    "autostart": false,
+    "minimize_to_tray": true,
+    "start_minimized": false,
+    "global_hotkey": "Ctrl+Shift+E",
+    "selected_preset": "master_4layer",
+    "max_fps": 0
+  },
+  "trail": {
+    "enabled": true,
+    "length": 80,
+    "spring": 50.0,
+    "damping": 30.0,
+    "head_spring": 50.0,
+    "head_damping": 30.0,
+    "lead_nodes": 4,
+    "cursor_size": 40.0,
+    "min_width": 2.0,
+    "velocity_width_mult": 0.5,
+    "velocity_alpha_mult": 0.1,
+    "interpolation_steps": 2,
+    "fade_mode": 3,
+    "enable_gradient": true,
+    "adaptive_quality": true,
+    "layers": [
+      {
+        "enabled": true,
+        "start_color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "end_color": [
+          1.0,
+          1.0,
+          1.0,
+          0.0
+        ],
+        "width_factor": 1.5,
+        "alpha_factor": 1.0,
+        "start_blur": 0.39,
+        "end_blur": 0.5
+      },
+      {
+        "enabled": true,
+        "start_color": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "end_color": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "width_factor": 0.9,
+        "alpha_factor": 1.0,
+        "start_blur": 0.1,
+        "end_blur": 0.1
+      },
+      {
+        "enabled": true,
+        "start_color": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "end_color": [
+          1.0,
+          1.0,
+          1.0,
+          0.0
+        ],
+        "width_factor": 0.5,
+        "alpha_factor": 1.0,
+        "start_blur": 0.1,
+        "end_blur": 0.1
+      },
+      {
+        "enabled": true,
+        "start_color": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "end_color": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "width_factor": 0.15,
+        "alpha_factor": 1.0,
+        "start_blur": 0.1,
+        "end_blur": 0.1
+      }
+    ]
+  },
+  "head": {
+    "enabled": true,
+    "size": 18.0,
+    "squish_intensity": 3.0,
+    "squish_smoothing": 50.0,
+    "color": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "filled": true,
+    "thickness": -1.0
+  },
+  "ripple": {
+    "enabled": true,
+    "max_diameter": 100.0,
+    "duration_ms": 600,
+    "start_width": 8.0,
+    "color_left": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "color_right": [
+      1.0,
+      0.47,
+      0.47,
+      1.0
+    ],
+    "color_middle": [
+      1.0,
+      1.0,
+      0.4,
+      1.0
+    ]
+  },
+  "particles": {
+    "enabled": true,
+    "count_per_click": 16,
+    "duration_ms": 500,
+    "base_speed": 300.0,
+    "gravity": 120.0,
+    "friction": 0.9,
+    "size": 3.0,
+    "color": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "satellites": {
+    "enabled": false,
+    "count": 3,
+    "orbit_diameter": 50.0,
+    "size": 5.0,
+    "speed": 3.0,
+    "dual_ring": false,
+    "show_orbit_ring": true,
+    "orbit_ring_thickness": 1.0,
+    "color": [
+      1.0,
+      1.0,
+      1.0,
+      0.8
+    ]
+  },
+  "rainbow": {
+    "enabled": false,
+    "speed": 2.0,
+    "saturation": 1.0,
+    "lightness": 0.5
+  },
+  "fps_counter": {
+    "enabled": false,
+    "refresh_rate_ms": 500,
+    "align_right": true,
+    "align_bottom": false
+  }
+}

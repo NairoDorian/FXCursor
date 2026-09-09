@@ -1,0 +1,45 @@
+{
+  "name": "fxcursor",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "typecheck": "tsc -b",
+    "lint": "oxlint src test scripts",
+    "lint:fix": "oxlint --fix src test scripts",
+    "test": "bun test",
+    "fixtures": "cargo run -q -p fxcursor-protocol --example dump_default > test/fixtures/default_config.json && cargo run -q -p fxcursor-render --example dump_mode_masks > test/fixtures/mode_masks.json",
+    "package:portable": "bun scripts/package-portable.ts",
+    "before-commit": "bun scripts/before-commit.ts",
+    "validate": "bun scripts/before-commit.ts --full",
+    "arch": "bun scripts/generate-arch.ts",
+    "docs:sync": "bun scripts/sync-docs.ts",
+    "docs:check": "bun scripts/sync-docs.ts --check",
+    "docs:find": "bun scripts/sync-docs.ts --find",
+    "create-icons": "bun scripts/create-icons.ts",
+    "update-deps": "bun scripts/update-deps.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@solidjs/web": "2.0.0-rc.4",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "solid-js": "2.0.0-rc.4"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "3.0.0-next.36",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "26.4.0",
+    "bun-types": "1.4.0-canary.20260820T142103",
+    "oxlint": "1.79.0",
+    "prettier": "4.0.0-alpha.13",
+    "repomix": "1.18.0",
+    "typescript": "7.1.0-dev.20260829.1",
+    "vite": "^8.2.2"
+  }
+}

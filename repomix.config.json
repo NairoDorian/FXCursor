@@ -1,58 +1,34 @@
 {
-  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "$schema": "https://repomix.com/schemas/config.json",
   "output": {
-    "filePath": "repomix-output.md",
+    "filePath": "ARCHITECTURE.md",
     "style": "markdown",
-    "showLineNumbers": true,
-    "removeComments": false,
-    "removeEmptyLines": false,
-    "topFilesLength": 10,
-    "instructionFilePath": "repomix-instruction.md",
-    "files": true,
+    "parsableStyle": false,
     "fileSummary": true,
     "directoryStructure": true,
-    "includeFullDirectoryStructure": true,
-    "tokenCountTree": true,
-    "git": {
-      "includeLogs": true,
-      "includeLogsCount": 10
-    }
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "showLineNumbers": false,
+    "copyToClipboard": false,
+    "includeEmptyDirectories": true
   },
-  "include": [
-    "README.md",
-    "memory.md",
-    "repomix-instruction.md",
-    "repo-summary.md",
-    "dev_scripts/build_instructions.md",
-    "project_cursor/src-tauri/**/*.rs",
-    "project_cursor/src-tauri/**/*.wgsl",
-    "project_cursor/src-tauri/Cargo.toml",
-    "project_cursor/src-tauri/tauri.conf.json",
-    "project_cursor/src/**/*.tsx",
-    "project_cursor/src/**/*.ts",
-    "project_cursor/src/**/*.css",
-    "project_cursor/index.html",
-    "project_cursor/package.json",
-    "project_cursor/vite.config.ts",
-    "project_cursor/tsconfig.json"
-  ],
+  "include": ["**/*"],
   "ignore": {
     "useGitignore": true,
     "useDefaultPatterns": true,
     "customPatterns": [
-      "target/",
-      "**/target/",
-      "**/*.rs.bk",
-      ".DS_Store",
-      "Thumbs.db",
-      "project_cursor/config.ron",
-      "repomix-output.md",
-      "repomix-output-compressed.md",
-      "repomix-output.json",
-      "original_mods/**",
-      "node_modules/**",
       "dist/**",
-      "bun.lock"
+      "target/**",
+      "src-tauri/target/**",
+      "node_modules/**",
+      ".docs/**",
+      ".system_generated/**",
+      "*.log",
+      "bun.lock",
+      "Cargo.lock"
     ]
+  },
+  "security": {
+    "enableSecurityCheck": true
   }
 }
