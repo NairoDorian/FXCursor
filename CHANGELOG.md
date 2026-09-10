@@ -5,7 +5,7 @@
 ### Changed
 
 - **Rust edition 2024** across the workspace (rustc 1.98.1): `cargo fix --edition` migration, nested `if let`s rewritten as let-chains, clippy clean under the new edition.
-- Dependencies at the newest pre-releases: SolidJS 2.0.0-rc.7 (cleanups are now returned from `onSettled` / effects instead of `onCleanup`), Vite 8.3 beta, TypeScript 7.1 dev 2026-09-09, oxlint 1.82, bun-types canary; transitive crates refreshed. The unused `windows-core` and `libc` dependencies were dropped.
+- Dependencies at the newest pre-releases: SolidJS 2.0.0-rc.7 (cleanups are now returned from `onSettled` / effects instead of `onCleanup`), Vite 8.3 beta, TypeScript 7.1 dev 2026-09-09, oxlint 1.82, bun-types canary; transitive crates refreshed. The daemon moved to winit 0.31.0-beta.3 (trait-object `Window` / `ActiveEventLoop`, `can_create_surfaces`, `SurfaceResized`). The unused `windows-core` and `libc` dependencies were dropped.
 
 ## [0.5.0] - 2026-09-09
 

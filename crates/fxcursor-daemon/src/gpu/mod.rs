@@ -16,7 +16,7 @@ pub struct GpuContext {
 }
 
 impl GpuContext {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(window: Arc<dyn Window>) -> Self {
         let backends = if cfg!(target_os = "windows") {
             Backends::DX12 | Backends::VULKAN
         } else if cfg!(target_os = "macos") {
@@ -67,7 +67,7 @@ impl GpuContext {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
-        let size = window.inner_size();
+        let size = window.surface_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
 

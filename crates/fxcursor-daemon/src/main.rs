@@ -27,7 +27,7 @@ use fxcursor_render::OverlayRenderer;
 struct App {
     state: Arc<StateManager>,
     tray: Option<TrayManager>,
-    window: Option<Arc<Window>>,
+    window: Option<Arc<dyn Window>>,
     gpu: Option<GpuContext>,
     renderer: Option<OverlayRenderer>,
     input_tracker: InputTracker,
@@ -63,7 +63,8 @@ impl App {
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    // winit 0.31: surfaces are created here (not in `resumed`), the loop is a trait object.
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.window.is_none() {
             let window = create_overlay_window(event_loop);
             self.tray = Some(TrayManager::new());
@@ -86,7 +87,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {
+    fn new_events(&mut self, _event_loop: &dyn ActiveEventLoop, _cause: StartCause) {
         if let (Some(window), Some(gpu), Some(renderer)) =
             (&self.window, &mut self.gpu, &mut self.renderer)
         {
@@ -131,7 +132,7 @@ impl ApplicationHandler for App {
                         let view = frame
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
-                        let size = window.inner_size();
+                        let size = window.surface_size();
                         renderer.render(
                             &gpu.device,
                             &gpu.queue,
@@ -171,12 +172,17 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        _id: WindowId,
+        event: WindowEvent,
+    ) {
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
-            WindowEvent::Resized(new_size) => {
+            WindowEvent::SurfaceResized(new_size) => {
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize(new_size.width, new_size.height);
                 }
@@ -185,7 +191,7 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         // Paced at display refresh rate or throttled sleep
         if let Some(renderer) = &self.renderer {
             let config = self.state.config.read();
@@ -205,7 +211,7 @@ fn main() {
     log::info!("Starting FXCursor V4 Background Micro-Daemon...");
 
     let event_loop = EventLoop::new().expect("Failed to initialize event loop");
-    let mut app = App::new();
+    let app = App::new();
 
-    let _ = event_loop.run_app(&mut app);
+    let _ = event_loop.run_app(app);
 }

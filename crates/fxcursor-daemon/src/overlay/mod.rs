@@ -5,7 +5,9 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowLevel};
 
-pub fn create_overlay_window(event_loop: &ActiveEventLoop) -> Arc<Window> {
+/// Creates the transparent overlay window. winit 0.31 hands out `Box<dyn Window>`; it is
+/// shared as an `Arc<dyn Window>` because wgpu keeps a handle for the surface.
+pub fn create_overlay_window(event_loop: &dyn ActiveEventLoop) -> Arc<dyn Window> {
     #[cfg(windows)]
     let ((origin_x, origin_y), (width, height)) = windows::win32::get_virtual_screen_geometry();
     #[cfg(not(windows))]
@@ -18,17 +20,17 @@ pub fn create_overlay_window(event_loop: &ActiveEventLoop) -> Arc<Window> {
         .with_window_level(WindowLevel::AlwaysOnTop)
         .with_active(false)
         .with_position(PhysicalPosition::new(origin_x, origin_y))
-        .with_inner_size(PhysicalSize::new(width, height))
+        .with_surface_size(PhysicalSize::new(width, height))
         .with_resizable(false);
 
-    let window = Arc::new(
+    let window: Arc<dyn Window> = Arc::from(
         event_loop
             .create_window(attributes)
             .expect("Failed to create overlay window"),
     );
 
     #[cfg(windows)]
-    windows::win32::apply_click_through_styles(&window);
+    windows::win32::apply_click_through_styles(window.as_ref());
 
     window
 }

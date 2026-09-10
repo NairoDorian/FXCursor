@@ -5,7 +5,7 @@ pub mod win32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     use winit::window::Window;
 
-    pub fn apply_click_through_styles(window: &Window) {
+    pub fn apply_click_through_styles(window: &dyn Window) {
         if let Ok(handle) = window.window_handle()
             && let RawWindowHandle::Win32(win32_handle) = handle.as_raw()
         {
