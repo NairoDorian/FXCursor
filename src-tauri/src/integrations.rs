@@ -22,10 +22,7 @@ fn set_status(status: String) {
 
 /// Last hotkey registration outcome ("registered 'Ctrl+Shift+E'", "disabled", or an error).
 pub fn hotkey_status() -> String {
-    HOTKEY_STATUS
-        .lock()
-        .map(|s| s.clone())
-        .unwrap_or_default()
+    HOTKEY_STATUS.lock().map(|s| s.clone()).unwrap_or_default()
 }
 
 /// Brings the global hotkey and autostart entry in line with `config.general`.
@@ -64,10 +61,10 @@ pub fn sync_hotkey(app: &AppHandle, desired: &str) -> Result<(), String> {
         .map_err(|e| format!("cannot parse hotkey '{desired}': {e}"))?;
 
     gs.on_shortcut(shortcut, |app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
-            if let Some(enabled) = crate::toggle_enabled(app) {
-                log::info!("[hotkey] effects toggled via global shortcut -> enabled={enabled}");
-            }
+        if event.state == ShortcutState::Pressed
+            && let Some(enabled) = crate::toggle_enabled(app)
+        {
+            log::info!("[hotkey] effects toggled via global shortcut -> enabled={enabled}");
         }
     })
     .map_err(|e| format!("cannot register hotkey '{desired}': {e}"))?;
@@ -85,7 +82,11 @@ pub fn sync_autostart(app: &AppHandle, wanted: bool) {
     if current == wanted {
         return;
     }
-    let result = if wanted { launcher.enable() } else { launcher.disable() };
+    let result = if wanted {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
     match result {
         Ok(()) => log::info!("[autostart] login autostart set to {wanted}"),
         Err(err) => log::warn!("[autostart] could not set autostart={wanted}: {err}"),

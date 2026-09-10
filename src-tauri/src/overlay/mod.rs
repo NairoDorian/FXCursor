@@ -37,10 +37,11 @@ fn fit_overlay_window(window: &tauri::WebviewWindow, bounds: (i32, i32, u32, u32
     let _ = window.set_size(tauri::PhysicalSize::new(vw, vh));
     let deadline = Instant::now() + Duration::from_millis(500);
     while Instant::now() < deadline {
-        if let Ok(size) = window.inner_size() {
-            if size.width == vw && size.height == vh {
-                break;
-            }
+        if let Ok(size) = window.inner_size()
+            && size.width == vw
+            && size.height == vh
+        {
+            break;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -114,26 +115,25 @@ impl OverlayState {
             adapter_info.backend,
             adapter_info.device_type
         );
-        if let Some(runtime) = app_handle.try_state::<crate::RuntimeInfo>() {
-            if let Ok(mut slot) = runtime.gpu.lock() {
-                *slot = Some(crate::GpuInfo {
-                    adapter: adapter_info.name.clone(),
-                    backend: format!("{:?}", adapter_info.backend),
-                    device_type: format!("{:?}", adapter_info.device_type),
-                });
-            }
+        if let Some(runtime) = app_handle.try_state::<crate::RuntimeInfo>()
+            && let Ok(mut slot) = runtime.gpu.lock()
+        {
+            *slot = Some(crate::GpuInfo {
+                adapter: adapter_info.name.clone(),
+                backend: format!("{:?}", adapter_info.backend),
+                device_type: format!("{:?}", adapter_info.device_type),
+            });
         }
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                 label: Some("overlay_device"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 memory_hints: Default::default(),
                 trace: Default::default(),
                 experimental_features: Default::default(),
-            },
-        ))?;
+            }))?;
 
         let size = window
             .inner_size()
@@ -203,22 +203,30 @@ impl OverlayState {
                              state: &'static str,
                              counts: (u32, u32)| {
             let secs = window.as_secs_f32().max(1e-3);
-            let fps = if frames > 0 { frames as f32 / secs } else { 0.0 };
-            let frame_ms = if frames > 0 { cpu_ms / frames as f32 } else { 0.0 };
+            let fps = if frames > 0 {
+                frames as f32 / secs
+            } else {
+                0.0
+            };
+            let frame_ms = if frames > 0 {
+                cpu_ms / frames as f32
+            } else {
+                0.0
+            };
             log::debug!(
                 target: "fxcursor_lib::overlay::stats",
                 "state={state} fps={fps:.1} cpu_ms={frame_ms:.3} capsules={} billboards={}",
                 counts.0,
                 counts.1
             );
-            if let Some(rt) = runtime {
-                if let Ok(mut slot) = rt.frame.lock() {
-                    slot.fps = fps;
-                    slot.frame_ms = frame_ms;
-                    slot.state = state.to_string();
-                    slot.ribbon_vertices = counts.0;
-                    slot.instances = counts.1;
-                }
+            if let Some(rt) = runtime
+                && let Ok(mut slot) = rt.frame.lock()
+            {
+                slot.fps = fps;
+                slot.frame_ms = frame_ms;
+                slot.state = state.to_string();
+                slot.ribbon_vertices = counts.0;
+                slot.instances = counts.1;
             }
         };
 
@@ -255,17 +263,16 @@ impl OverlayState {
                 }
             }
 
-            if let Ok(current_size) = window.inner_size() {
-                if current_size.width > 0
-                    && current_size.height > 0
-                    && (current_size.width != surface_config.width
-                        || current_size.height != surface_config.height)
-                {
-                    surface_config.width = current_size.width;
-                    surface_config.height = current_size.height;
-                    surface.configure(&device, &surface_config);
-                    surface_changed = true;
-                }
+            if let Ok(current_size) = window.inner_size()
+                && current_size.width > 0
+                && current_size.height > 0
+                && (current_size.width != surface_config.width
+                    || current_size.height != surface_config.height)
+            {
+                surface_config.width = current_size.width;
+                surface_config.height = current_size.height;
+                surface.configure(&device, &surface_config);
+                surface_changed = true;
             }
 
             let current_config = config.lock().map(|c| c.clone()).unwrap_or_default();
@@ -340,10 +347,10 @@ impl OverlayState {
                 settle_frames = SETTLE_FRAMES;
             }
             let burst_pending = !still_pending.is_empty();
-            if burst_pending {
-                if let Some(mut q) = runtime.as_ref().and_then(|rt| rt.captures.lock().ok()) {
-                    q.extend(still_pending);
-                }
+            if burst_pending
+                && let Some(mut q) = runtime.as_ref().and_then(|rt| rt.captures.lock().ok())
+            {
+                q.extend(still_pending);
             }
 
             // A burst keeps the loop ticking at frame rate (even with the pointer still) so its
@@ -354,9 +361,18 @@ impl OverlayState {
 
             // ---- 4. Idle: park until input/config activity (bounded) ------------------------
             if settle_frames == 0 {
-                if stats_last_state != "idle" || stats_window_start.elapsed() > Duration::from_millis(500) {
+                if stats_last_state != "idle"
+                    || stats_window_start.elapsed() > Duration::from_millis(500)
+                {
                     stats_last_state = "idle";
-                    publish_stats(&runtime, stats_window_start.elapsed(), 0, 0.0, "idle", renderer.last_counts);
+                    publish_stats(
+                        &runtime,
+                        stats_window_start.elapsed(),
+                        0,
+                        0.0,
+                        "idle",
+                        renderer.last_counts,
+                    );
                     stats_window_start = Instant::now();
                     stats_frames = 0;
                     stats_cpu_ms = 0.0;
@@ -401,12 +417,22 @@ impl OverlayState {
             stats_last_state = if is_animating { "active" } else { "settling" };
             let window_elapsed = stats_window_start.elapsed();
             if window_elapsed >= Duration::from_millis(500) {
-                publish_stats(&runtime, window_elapsed, stats_frames, stats_cpu_ms, stats_last_state, renderer.last_counts);
+                publish_stats(
+                    &runtime,
+                    window_elapsed,
+                    stats_frames,
+                    stats_cpu_ms,
+                    stats_last_state,
+                    renderer.last_counts,
+                );
                 // On-overlay HUD: refreshed at the configured rate (never faster than the
                 // 500 ms statistics window).
-                let hud_period = Duration::from_millis(u64::from(current_config.fps_counter.refresh_rate_ms.max(100)));
+                let hud_period = Duration::from_millis(u64::from(
+                    current_config.fps_counter.refresh_rate_ms.max(100),
+                ));
                 if current_config.fps_counter.enabled && hud_last_update.elapsed() >= hud_period {
-                    renderer.set_hud_fps(stats_frames as f32 / window_elapsed.as_secs_f32().max(1e-3));
+                    renderer
+                        .set_hud_fps(stats_frames as f32 / window_elapsed.as_secs_f32().max(1e-3));
                     hud_last_update = Instant::now();
                 }
                 stats_window_start = Instant::now();
@@ -424,7 +450,9 @@ impl OverlayState {
                 }
             } else {
                 // Settling: wait for more input rather than spinning.
-                let wait = deadline.saturating_duration_since(now).max(Duration::from_millis(1));
+                let wait = deadline
+                    .saturating_duration_since(now)
+                    .max(Duration::from_millis(1));
                 seen_generation = input.wait_for_activity(seen_generation, wait);
             }
         }

@@ -9,10 +9,9 @@ use std::sync::{Arc, OnceLock};
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, SetWindowsHookExW,
-    TranslateMessage, HC_ACTION, MSG, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN,
-    WM_XBUTTONUP,
+    CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, HC_ACTION, MSG, MSLLHOOKSTRUCT,
+    SetWindowsHookExW, TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
 
 static HUB: OnceLock<Arc<InputHub>> = OnceLock::new();
@@ -47,8 +46,10 @@ pub fn spawn_hook_thread(hub: Arc<InputHub>) {
 }
 
 unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 {
-        if let Some(hub) = HUB.get() {
+    unsafe {
+        if code == HC_ACTION as i32
+            && let Some(hub) = HUB.get()
+        {
             let info = &*(lparam as *const MSLLHOOKSTRUCT);
             let (x, y) = (info.pt.x as f32, info.pt.y as f32);
             match wparam as u32 {
@@ -68,8 +69,8 @@ unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPA
                 _ => {}
             }
         }
+        CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
     }
-    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
 }
 
 /// Fallback poll of the cursor position (works even when hooks are muted by UIPI).

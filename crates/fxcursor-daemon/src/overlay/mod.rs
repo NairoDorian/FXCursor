@@ -21,7 +21,11 @@ pub fn create_overlay_window(event_loop: &ActiveEventLoop) -> Arc<Window> {
         .with_inner_size(PhysicalSize::new(width, height))
         .with_resizable(false);
 
-    let window = Arc::new(event_loop.create_window(attributes).expect("Failed to create overlay window"));
+    let window = Arc::new(
+        event_loop
+            .create_window(attributes)
+            .expect("Failed to create overlay window"),
+    );
 
     #[cfg(windows)]
     windows::win32::apply_click_through_styles(&window);

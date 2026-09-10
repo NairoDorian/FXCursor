@@ -5,7 +5,7 @@
 [![SolidJS](https://img.shields.io/badge/SolidJS-v2.0.0--rc.4-2c4f7c?style=flat-square&logo=solid&logoColor=white)](https://solidjs.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-v7.1--dev-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![wgpu](https://img.shields.io/badge/wgpu-v30.0-3178C6?style=flat-square&logo=rust&logoColor=white)](https://wgpu.rs)
-[![Rust](https://img.shields.io/badge/Rust-2021%20Edition-black?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-2024%20Edition-black?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org)
 [![Status](https://img.shields.io/badge/status-under%20construction-yellow?style=flat-square)](PROGRESS.md)
 
 GPU-accelerated cursor effects for the desktop: a transparent, click-through overlay that renders a 4-layer luminous ribbon trail, a squishy cursor head, click ripples, particle bursts and orbiting satellites, plus a SolidJS 2 settings studio living in the system tray.

@@ -6,25 +6,26 @@ pub mod win32 {
     use winit::window::Window;
 
     pub fn apply_click_through_styles(window: &Window) {
-        if let Ok(handle) = window.window_handle() {
-            if let RawWindowHandle::Win32(win32_handle) = handle.as_raw() {
-                let hwnd = win32_handle.hwnd.get() as HWND;
-                unsafe {
-                    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-                    let new_style = ex_style as u32
-                        | WS_EX_TRANSPARENT
-                        | WS_EX_LAYERED
-                        | WS_EX_NOREDIRECTIONBITMAP;
-                    SetWindowLongW(hwnd, GWL_EXSTYLE, new_style as i32);
-                    
-                    // Force top-most positioning without activating
-                    SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        0, 0, 0, 0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                    );
-                }
+        if let Ok(handle) = window.window_handle()
+            && let RawWindowHandle::Win32(win32_handle) = handle.as_raw()
+        {
+            let hwnd = win32_handle.hwnd.get() as HWND;
+            unsafe {
+                let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                let new_style =
+                    ex_style as u32 | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP;
+                SetWindowLongW(hwnd, GWL_EXSTYLE, new_style as i32);
+
+                // Force top-most positioning without activating
+                SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                );
             }
         }
     }

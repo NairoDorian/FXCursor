@@ -3,7 +3,7 @@
 > **Milestone Status**: 🟡 Under construction — Tauri single-process path works end to end on Windows; V4 "micro-daemon" architecture is a prototype. Repository restructured and renamed **FXCursor** on 2026-09-09 (app at the root, V3 under `legacy/`).
 > **Version**: `0.5.0` (pre-release)
 > **Last audit**: 2026-09-09, session 6 (full code read of `src-tauri`, `src`, `crates/*`; trail physics verified frame by frame with burst snapshots)
-> **Tech Stack**: Tauri 2.11, Bun 1.4, SolidJS 2.0.0-rc.4, TypeScript 7.1-dev, Vite 8, wgpu 30, windows 0.62, Rust 2021
+> **Tech Stack**: Tauri 2.11, Bun 1.4, SolidJS 2.0.0-rc.4, TypeScript 7.1-dev, Vite 8, wgpu 30, windows 0.62, Rust 2024 edition
 
 > [!CRITICAL]
 > **Primary Standards & Rules** (see `AGENTS.md`):

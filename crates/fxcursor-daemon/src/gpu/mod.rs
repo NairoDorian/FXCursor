@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use wgpu::{
-    Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor,
-    Limits, PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface,
-    SurfaceConfiguration, TextureUsages,
+    Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
+    PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration,
+    TextureUsages,
 };
 use winit::window::Window;
 
@@ -48,16 +48,14 @@ impl GpuContext {
             .expect("Failed to find suitable graphics adapter");
 
         let (device, queue) = adapter
-            .request_device(
-                &DeviceDescriptor {
-                    label: Some("fxcursor_device"),
-                    required_features: Features::empty(),
-                    required_limits: Limits::default(),
-                    memory_hints: Default::default(),
-                    trace: Default::default(),
-                    experimental_features: Default::default(),
-                },
-            )
+            .request_device(&DeviceDescriptor {
+                label: Some("fxcursor_device"),
+                required_features: Features::empty(),
+                required_limits: Limits::default(),
+                memory_hints: Default::default(),
+                trace: Default::default(),
+                experimental_features: Default::default(),
+            })
             .await
             .expect("Failed to create wgpu device");
 

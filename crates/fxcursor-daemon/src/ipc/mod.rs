@@ -1,8 +1,8 @@
+use crate::state::StateManager;
+use fxcursor_protocol::{AppConfig, get_builtin_presets};
+use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::sync::Arc;
-use fxcursor_protocol::{get_builtin_presets, AppConfig};
-use serde::{Deserialize, Serialize};
-use crate::state::StateManager;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
@@ -82,21 +82,22 @@ impl IpcServer {
             Err(e) => IpcResponse::Error(format!("Invalid IPC JSON payload: {}", e)),
         };
 
-        serde_json::to_string(&resp).unwrap_or_else(|_| r#"{"type":"Error","payload":"Serialization error"}"#.into())
+        serde_json::to_string(&resp)
+            .unwrap_or_else(|_| r#"{"type":"Error","payload":"Serialization error"}"#.into())
     }
 
     #[cfg(windows)]
     fn run_windows_named_pipe_loop(state: Arc<StateManager>) {
         use std::os::windows::io::FromRawHandle;
-        use windows::core::w;
         use windows::Win32::Foundation::{
-            CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE, HANDLE,
+            CloseHandle, ERROR_PIPE_CONNECTED, GetLastError, HANDLE, INVALID_HANDLE_VALUE,
         };
         use windows::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
         use windows::Win32::System::Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
             PIPE_TYPE_MESSAGE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
         };
+        use windows::core::w;
 
         loop {
             let handle = unsafe {
@@ -118,7 +119,9 @@ impl IpcServer {
                 continue;
             }
 
-            let connected = unsafe { ConnectNamedPipe(handle, None).is_ok() || GetLastError() == ERROR_PIPE_CONNECTED };
+            let connected = unsafe {
+                ConnectNamedPipe(handle, None).is_ok() || GetLastError() == ERROR_PIPE_CONNECTED
+            };
             if connected {
                 let state_clone = state.clone();
                 let raw_handle = handle.0 as usize;
@@ -133,7 +136,9 @@ impl IpcServer {
                     let mut line = String::new();
 
                     while let Ok(n) = reader.read_line(&mut line) {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let resp = Self::handle_message(line.trim(), &state_clone);
                         let _ = writeln!(file, "{}", resp);
                         let _ = file.flush();
@@ -169,7 +174,11 @@ impl IpcServer {
         let listener = match UnixListener::bind(&socket_path) {
             Ok(l) => l,
             Err(e) => {
-                log::error!("[ipc] Failed to bind Unix socket at {:?}: {}", socket_path, e);
+                log::error!(
+                    "[ipc] Failed to bind Unix socket at {:?}: {}",
+                    socket_path,
+                    e
+                );
                 return;
             }
         };
@@ -187,7 +196,9 @@ impl IpcServer {
                         let mut line = String::new();
 
                         while let Ok(n) = reader.read_line(&mut line) {
-                            if n == 0 { break; }
+                            if n == 0 {
+                                break;
+                            }
                             let resp = Self::handle_message(line.trim(), &state_clone);
                             let _ = writeln!(stream, "{}", resp);
                             let _ = stream.flush();

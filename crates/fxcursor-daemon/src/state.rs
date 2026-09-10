@@ -1,8 +1,8 @@
+use crate::portable;
+use fxcursor_protocol::{AppConfig, deserialize_with_self_healing};
+use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use fxcursor_protocol::{deserialize_with_self_healing, AppConfig};
-use crate::portable;
 
 pub struct StateManager {
     pub config: Arc<RwLock<AppConfig>>,
@@ -18,11 +18,14 @@ impl StateManager {
             if let Ok(raw) = std::fs::read_to_string(&config_path) {
                 match deserialize_with_self_healing::<AppConfig>(&raw) {
                     Ok(outcome) => {
-                        if outcome.needs_rewrite {
-                            if let Ok(healed_json) = serde_json::to_string_pretty(&outcome.value) {
-                                let _ = std::fs::write(&config_path, healed_json);
-                                log::info!("[state] Healed settings and saved to disk. Repaired: {:?}", outcome.repaired_paths);
-                            }
+                        if outcome.needs_rewrite
+                            && let Ok(healed_json) = serde_json::to_string_pretty(&outcome.value)
+                        {
+                            let _ = std::fs::write(&config_path, healed_json);
+                            log::info!(
+                                "[state] Healed settings and saved to disk. Repaired: {:?}",
+                                outcome.repaired_paths
+                            );
                         }
                         outcome.value
                     }

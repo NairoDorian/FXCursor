@@ -104,21 +104,21 @@ fn reset_path(target: &mut Value, default: &Value, segments: &[PathSegment]) -> 
 
     match &segments[0] {
         PathSegment::Key(k) => {
-            if let (Value::Object(t_map), Value::Object(d_map)) = (target, default) {
-                if let Some(d_val) = d_map.get(k) {
-                    let t_val = t_map.entry(k.clone()).or_insert_with(|| d_val.clone());
-                    return reset_path(t_val, d_val, &segments[1..]);
-                }
+            if let (Value::Object(t_map), Value::Object(d_map)) = (target, default)
+                && let Some(d_val) = d_map.get(k)
+            {
+                let t_val = t_map.entry(k.clone()).or_insert_with(|| d_val.clone());
+                return reset_path(t_val, d_val, &segments[1..]);
             }
         }
         PathSegment::Index(idx) => {
-            if let (Value::Array(t_arr), Value::Array(d_arr)) = (target, default) {
-                if *idx < d_arr.len() {
-                    while t_arr.len() <= *idx {
-                        t_arr.push(d_arr[t_arr.len()].clone());
-                    }
-                    return reset_path(&mut t_arr[*idx], &d_arr[*idx], &segments[1..]);
+            if let (Value::Array(t_arr), Value::Array(d_arr)) = (target, default)
+                && *idx < d_arr.len()
+            {
+                while t_arr.len() <= *idx {
+                    t_arr.push(d_arr[t_arr.len()].clone());
                 }
+                return reset_path(&mut t_arr[*idx], &d_arr[*idx], &segments[1..]);
             }
         }
     }
@@ -147,7 +147,8 @@ where
         .map_err(|e| format!("Failed to serialize default instance: {}", e))?;
 
     let mut repaired_paths = Vec::new();
-    let mut needs_rewrite = merge_defaults(&mut parsed_value, &default_value, "", &mut repaired_paths);
+    let mut needs_rewrite =
+        merge_defaults(&mut parsed_value, &default_value, "", &mut repaired_paths);
 
     for _ in 0..MAX_REPAIR_ROUNDS {
         let deserializer = parsed_value.clone();
@@ -163,11 +164,15 @@ where
             }
             Err(err) => {
                 let path_str = err.path().to_string();
-                log::warn!("[self-healing] Broken config field at '{}': {}", path_str, err);
-                
+                log::warn!(
+                    "[self-healing] Broken config field at '{}': {}",
+                    path_str,
+                    err
+                );
+
                 let segments = parse_path(&path_str);
                 reset_path(&mut parsed_value, &default_value, &segments);
-                
+
                 repaired_paths.push(path_str);
                 needs_rewrite = true;
             }
@@ -207,7 +212,8 @@ mod tests {
             }
         }"#;
 
-        let outcome: RepairOutcome<AppConfig> = deserialize_with_self_healing(json_with_bad_field).unwrap();
+        let outcome: RepairOutcome<AppConfig> =
+            deserialize_with_self_healing(json_with_bad_field).unwrap();
 
         assert!(outcome.needs_rewrite);
         assert!(!outcome.repaired_paths.is_empty());
