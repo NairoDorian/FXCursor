@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup, onSettled, Show, For } from 'solid-js';
+import { createSignal, createEffect, onSettled, Show, For } from 'solid-js';
 import { commands } from './lib/bindings';
 import { attachBackendLogs } from './lib/console';
 import { listen } from '@tauri-apps/api/event';
@@ -97,7 +97,8 @@ export function AppContent() {
       }
     };
     window.addEventListener('keydown', onKey);
-    onCleanup(() => window.removeEventListener('keydown', onKey));
+    // SolidJS 2: cleanups are returned from onSettled / effects, not registered via onCleanup.
+    return () => window.removeEventListener('keydown', onKey);
   });
 
   const handleSaveNow = async () => {

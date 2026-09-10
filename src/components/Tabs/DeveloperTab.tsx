@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, onCleanup, onSettled, For, Show } from 'solid-js';
+import { Component, createSignal, createEffect, onSettled, For, Show } from 'solid-js';
 import { SectionCard } from '../Common/SectionCard';
 import {
   commands,
@@ -70,7 +70,8 @@ export const DeveloperTab: Component<DeveloperTabProps> = (props) => {
       };
       void tick();
       const id = setInterval(() => void tick(), every);
-      onCleanup(() => clearInterval(id));
+      // SolidJS 2: the effect returns its cleanup (runs before the next run / on dispose).
+      return () => clearInterval(id);
     }
   );
 

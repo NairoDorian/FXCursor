@@ -2,7 +2,7 @@
 
 [![Tauri 2](https://img.shields.io/badge/Tauri-v2.11-24C8D5?style=flat-square&logo=tauri&logoColor=white)](https://v2.tauri.app)
 [![Bun](https://img.shields.io/badge/Bun-v1.4-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
-[![SolidJS](https://img.shields.io/badge/SolidJS-v2.0.0--rc.4-2c4f7c?style=flat-square&logo=solid&logoColor=white)](https://solidjs.com)
+[![SolidJS](https://img.shields.io/badge/SolidJS-v2.0.0--rc.7-2c4f7c?style=flat-square&logo=solid&logoColor=white)](https://solidjs.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-v7.1--dev-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![wgpu](https://img.shields.io/badge/wgpu-v30.0-3178C6?style=flat-square&logo=rust&logoColor=white)](https://wgpu.rs)
 [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-black?style=flat-square&logo=rust&logoColor=white)](https://rust-lang.org)

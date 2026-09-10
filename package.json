@@ -26,20 +26,20 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@solidjs/web": "2.0.0-rc.4",
+    "@solidjs/web": "2.0.0-rc.7",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-process": "^2.3.1",
-    "solid-js": "2.0.0-rc.4"
+    "solid-js": "2.0.0-rc.7"
   },
   "devDependencies": {
-    "@solidjs/vite-plugin": "3.0.0-next.36",
+    "@solidjs/vite-plugin": "3.0.0-next.41",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "26.4.0",
-    "bun-types": "1.4.0-canary.20260820T142103",
-    "oxlint": "1.79.0",
+    "bun-types": "1.4.3-canary.20260909T141324",
+    "oxlint": "1.82.0",
     "prettier": "4.0.0-alpha.13",
     "repomix": "1.18.0",
-    "typescript": "7.1.0-dev.20260829.1",
-    "vite": "^8.2.2"
+    "typescript": "7.1.0-dev.20260909.1",
+    "vite": "8.3.0-beta.1"
   }
 }

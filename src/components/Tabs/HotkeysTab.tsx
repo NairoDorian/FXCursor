@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup } from 'solid-js';
+import { Component, createEffect, createSignal } from 'solid-js';
 import { SectionCard } from '../Common/SectionCard';
 import { commands, type GeneralConfig } from '../../lib/bindings';
 import { isTauri } from '../../lib/tauri';
@@ -31,7 +31,8 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
     () => props.general.global_hotkey,
     () => {
       const id = setTimeout(() => void refreshStatus(), 600);
-      onCleanup(() => clearTimeout(id));
+      // SolidJS 2: the effect returns its cleanup (runs before the next run / on dispose).
+      return () => clearTimeout(id);
     }
   );
   const statusIsError = () => hotkeyStatus().startsWith('error');
