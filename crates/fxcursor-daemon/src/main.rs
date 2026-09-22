@@ -133,14 +133,19 @@ impl ApplicationHandler for App {
                             .texture
                             .create_view(&wgpu::TextureViewDescriptor::default());
                         let size = window.surface_size();
-                        renderer.render(
-                            &gpu.device,
-                            &gpu.queue,
-                            &view,
-                            size.width,
-                            size.height,
-                            &config,
-                        );
+                        if config.enabled {
+                            renderer.render(
+                                &gpu.device,
+                                &gpu.queue,
+                                &view,
+                                size.width,
+                                size.height,
+                                &config,
+                            );
+                        } else {
+                            renderer.clear_active_state();
+                            renderer.render_clear(&gpu.device, &gpu.queue, &view);
+                        }
                         gpu.queue.present(frame);
                     }
                     wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {

@@ -1,3 +1,5 @@
+//! Win32 click-through layered styles and virtual desktop geometry resolution.
+
 #[cfg(windows)]
 pub mod win32 {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -5,6 +7,7 @@ pub mod win32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     use winit::window::Window;
 
+    /// Configures extended window styles: transparent click-through and always-on-top.
     pub fn apply_click_through_styles(window: &dyn Window) {
         if let Ok(handle) = window.window_handle()
             && let RawWindowHandle::Win32(win32_handle) = handle.as_raw()

@@ -71,7 +71,7 @@ Built with **Tauri 2**, **Bun**, **SolidJS 2**, **TypeScript 7**, **wgpu 30** (D
 ```mermaid
 graph LR
     subgraph "Tauri 2 process"
-        UI["Studio window<br/>SolidJS 2 dashboard"] -- "invoke(update_config…)" --> ST["Arc&lt;Mutex&lt;AppConfig&gt;&gt;"]
+        UI["Studio window<br/>SolidJS 2 dashboard"] -- "commands.updateConfig(…)" --> ST["Arc&lt;Mutex&lt;AppConfig&gt;&gt;"]
         ST -- "config-updated event" --> UI
         ST --> SAVE["Autosave thread<br/>config.json (self-healing)"]
         ST --> INT["integrations.rs<br/>global hotkey · autostart"]
@@ -117,22 +117,24 @@ rtk git status && rtk git add . && rtk git commit -m "feat: ..." && rtk git push
 
 ## 🔌 IPC surface (`src-tauri/src/lib.rs`)
 
-| Command           | Direction         | Purpose                                                                             |
-| :---------------- | :---------------- | :---------------------------------------------------------------------------------- |
-| `get_config`      | UI → Rust         | Current `AppConfig`                                                                 |
-| `update_config`   | UI → Rust         | Replace config; broadcasts + autosaves + syncs hotkey/autostart                     |
-| `toggle_overlay`  | UI → Rust         | Flip `enabled`                                                                      |
-| `reset_defaults`  | UI → Rust         | Factory defaults (persisted)                                                        |
-| `save_config`     | UI → Rust         | Immediate write, returns the file path                                              |
-| `list_presets`    | UI → Rust         | Built-in presets (`PresetInfo[]`)                                                   |
-| `apply_preset`    | UI → Rust         | Apply by id, sets `general.selected_preset`                                         |
-| `import_config`   | UI → Rust         | Self-healing import of a JSON document; returns repaired paths                      |
-| `get_diagnostics` | UI → Rust         | OS, arch, version, portable flag, config path, virtual screen bounds                |
-| `ping`            | UI → Rust         | Latency benchmark                                                                   |
-| `get_recent_logs` | UI → Rust         | Backend log history for the Dev Console                                             |
-| `capture_overlay` | UI → Rust         | Render the current overlay frame to a PNG (crop around the cursor or whole overlay) |
-| `config-updated`  | Rust → UI (event) | Emitted after every change (tray, hotkey, IPC)                                      |
-| `rust-log`        | Rust → UI (event) | Every `log` record from `fxcursor*` targets                                         |
+| Command              | Direction         | Purpose                                                                             |
+| :------------------- | :---------------- | :---------------------------------------------------------------------------------- |
+| `get_config`         | UI → Rust         | Current `AppConfig`                                                                 |
+| `update_config`      | UI → Rust         | Replace config; broadcasts + autosaves + syncs hotkey/autostart                     |
+| `toggle_overlay`     | UI → Rust         | Flip `enabled`                                                                      |
+| `reset_defaults`     | UI → Rust         | Factory defaults (persisted)                                                        |
+| `save_config`        | UI → Rust         | Immediate write, returns the file path                                              |
+| `list_presets`       | UI → Rust         | Built-in and user presets (`PresetInfo[]`)                                          |
+| `apply_preset`       | UI → Rust         | Apply by id, sets `general.selected_preset`                                         |
+| `save_user_preset`   | UI → Rust         | Save current look as a named user preset next to `config.json`                      |
+| `delete_user_preset` | UI → Rust         | Delete a custom user preset                                                         |
+| `import_config`      | UI → Rust         | Self-healing import of a JSON document; returns repaired paths                      |
+| `get_diagnostics`    | UI → Rust         | OS, arch, version, portable flag, config path, virtual screen bounds                |
+| `ping`               | UI → Rust         | Latency benchmark                                                                   |
+| `get_recent_logs`    | UI → Rust         | Backend log history for the Dev Console                                             |
+| `capture_overlay`    | UI → Rust         | Render the current overlay frame to a PNG (crop around the cursor or whole overlay) |
+| `config-updated`     | Rust → UI (event) | Emitted after every change (tray, hotkey, IPC)                                      |
+| `rust-log`           | Rust → UI (event) | Every `log` record from `fxcursor*` targets                                         |
 
 ---
 

@@ -12,7 +12,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 | **V1** (Legacy)  | Tauri V1     | SolidJS + Bun        | GDI+, D3D11 DLL     | CPU     | ~150–250 MB                    | Windows-only, injected DLL                                                              |
 | **V2** (Rust)    | winit 0.29   | egui 0.26            | wgpu 0.19           | CPU     | < 30 MB                        | Cross-platform, no webview                                                              |
 | **V3**           | Tauri V2     | React 19 + TW4       | wgpu 29             | CPU     | ~80–120 MB                     | `legacy/project_cursor/`, frozen                                                               |
-| **V4 (current)** | Tauri V2     | SolidJS 2 + native CSS | wgpu 30           | CPU     | ~330 MB RSS in debug (2 webviews); release target < 120 MB | ``. Overlay is a Tauri window + wgpu surface. Daemon is a prototype only. |
+| **V4 (current)** | Tauri V2     | SolidJS 2 + native CSS | wgpu 30           | CPU     | ~330 MB RSS in debug (2 webviews); release target < 120 MB | Active V4 at repository root. Overlay is a Tauri window + wgpu surface. Daemon is an experimental prototype. |
 | **V4 (spec)**    | Rust daemon  | SolidJS 2 (transient) | wgpu 30            | GPU compute | < 12 MB daemon             | `docs/V4_ARCHITECTURE_SPECIFICATION.md`; Pillars 1, 2, 4, 6 (non-Windows), 7 not built  |
 
 ### Why V4 kept the Tauri single-process model for now
@@ -32,7 +32,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 | CPU (active)             | < 2 %              | 4 ms loop, CPU ribbon build for 4 layers                                  |
 | GPU (idle)               | 0 %                | ✅ no submissions after 3 settle frames                                    |
 | Frame pacing             | Mailbox, ≤ 2 frames latency | ✅                                                                |
-| Input latency            | < 1 frame          | Polling (4 ms) — clicks shorter than a poll can be missed                 |
+| Input latency            | < 1 frame          | ✅ Windows: `WH_MOUSE_LL` hook queues clicks; non-Windows polls `device_query` |
 | Startup                  | < 1.0 s            | ~1 s dev; not measured release                                            |
 
 ---
@@ -63,7 +63,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 - `tauri-plugin-single-instance`: second launch focuses the Studio window.
 
 ### Presets
-- Rust `get_builtin_presets()` is the source of truth; the TS mirror exists only for `bun run dev` browser preview. Roadmap: generate bindings with `tauri-specta` (already a dependency) and drop the mirror.
+- Rust `get_builtin_presets()` is the source of truth; `tauri-specta` auto-generates `bindings.ts` with typed commands and config interfaces; the TS mirror exists only for `bun run dev` browser preview.
 
 ---
 
@@ -87,7 +87,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 
 ## 5. Build & Dependency Infrastructure
 
-- `bun run tauri dev` (Vite on port 1420 + `cargo run`), `bun run build`, `bun run tauri build` (bundling currently disabled in `tauri.conf.json`).
+- `bun run tauri dev` (Vite on port 1420 + `cargo run`), `bun run build`, `bun run tauri build` (NSIS current-user installer bundled).
 - `bun run update-deps` probes NPM pre-release dist-tags and Crates.io `newest_version` and then runs typecheck, build, `cargo check`, `cargo test`.
 - `bun run before-commit`: 7 gates (typecheck, lint, tests, build, cargo check, cargo test, version sync).
 - `bun run arch`: regenerates `ARCHITECTURE.md` via Repomix `pack()`.
@@ -97,12 +97,15 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 
 ## 6. Known Issues & Mitigations
 
-| Issue                                        | Platform | Mitigation / Plan                                                                   |
+| Issue                                        | Platform | Mitigation / Status                                                                 |
 | -------------------------------------------- | -------- | ----------------------------------------------------------------------------------- |
 | Overlay webview RAM overhead                 | All      | Accept for now; native overlay window on the roadmap                                |
-| Missed sub-poll clicks                       | All      | Raw Input / low-level hook (Phase B)                                                |
-| Daemon renderer fork drifts from Tauri copy  | —        | Extract `fxcursor-render` crate (Phase C)                                           |
-| Daemon pipe handle double-close, buffer caps | Windows  | Fix when the daemon becomes a real target                                           |
-| `effect_mode`, `fps_counter` unused          | —        | Implement or remove (Phase A)                                                       |
+| Missed sub-poll clicks                       | All      | ✅ Fixed on Windows via `WH_MOUSE_LL` hook + click queue; non-Windows polls tracker |
+| Daemon renderer fork drifts from Tauri copy  | —        | ✅ Fixed: extracted shared `fxcursor-render` crate used by both binaries            |
+| Daemon pipe handle double-close, buffer caps | Windows  | ✅ Fixed: single handle drop on stream close & clone error disconnect               |
+| `effect_mode`, `fps_counter` unused          | —        | ✅ Fixed: mode mask implemented across renderer/UI; FPS telemetry & HUD active      |
+| GPU depth texture dimension overflow         | All      | ✅ Fixed: clamped against `wgpu::Limits::max_texture_dimension_2d` in `ensure_depth` |
+| Burst capture concurrency & thread naming    | All      | ✅ Fixed: named `capture-png-worker` threads with graceful channel completion       |
+| Ineffective dynamic imports in web console   | Frontend | ✅ Fixed: static top-level imports in `console.ts`, 0 Vite chunking warnings        |
 | Wayland global mouse                         | Linux    | Layer-shell + seat events (Phase E)                                                 |
 | macOS accessibility prompt                   | macOS    | Document; consider `CGEventTap` in the daemon                                       |

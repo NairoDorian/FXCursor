@@ -85,7 +85,7 @@ export const DevConsoleTab: Component = () => {
           />
 
           <div style="display: flex; gap: 4px;">
-            {(['all', 'info', 'warn', 'error'] as const).map((lvl) => (
+            {(['all', 'debug', 'info', 'warn', 'error'] as const).map((lvl) => (
               <button
                 class={`tab-btn ${filterLevel() === lvl ? 'active' : ''}`}
                 style="padding: 4px 8px; font-size: 11px; text-transform: uppercase;"

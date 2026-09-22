@@ -637,11 +637,14 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Quit FXCursor", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &toggle_item, &separator, &quit_item])?;
 
-            let _tray = TrayIconBuilder::with_id(TRAY_ID)
+            let mut tray_builder = TrayIconBuilder::with_id(TRAY_ID)
                 .menu(&menu)
                 .tooltip(tray_tooltip(&loaded))
-                .show_menu_on_left_click(false)
-                .icon(app.default_window_icon().unwrap().clone())
+                .show_menu_on_left_click(false);
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => show_main_window(app),
                     "toggle" => {

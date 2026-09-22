@@ -1,6 +1,6 @@
 # Build and Update Instructions
 
-> **Scope note (2026-09-09)**: the PowerShell/CMD scripts in this folder were written for the legacy V3 app in `project_cursor/` and still hard-code that path. The active V4 app lives in **``** and is driven entirely by Bun scripts (section 1). Treat sections 2–4 as legacy until the scripts are re-pointed.
+> **Scope note (2026-09-09)**: the PowerShell/CMD scripts in this folder were written for the legacy V3 app in `project_cursor/` and still hard-code that path. The active V4 app lives in **the repository root** and is driven entirely by Bun scripts (section 1). Treat sections 2–4 as legacy until the scripts are re-pointed.
 
 ---
 
@@ -25,7 +25,7 @@ bun run package:portable    # portable zip next to the installer (exe + portable
 
 - Vite dev server: `http://localhost:1420` (HMR for the Studio only; Rust changes trigger a cargo rebuild).
 - Debug builds keep the console for `env_logger` output (`RUST_LOG=info` recommended); release builds use `windows_subsystem = "windows"`.
-- Configuration is written to `%APPDATA%\com.fxcursor.app\config.json` (Windows) or `<exe dir>\Data\config.json` when a file named `portable` sits next to the executable.
+- Configuration is written to `%APPDATA%\com.nairodorian.fxcursor\config.json` (Windows) or `<exe dir>\Data\config.json` when a file named `portable` sits next to the executable.
 - Launch with `--minimized` to start hidden in the tray (this is what autostart uses).
 
 ---

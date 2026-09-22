@@ -1,3 +1,5 @@
+//! Portable mode detection and application directory resolution for the daemon.
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -28,7 +30,7 @@ pub fn get_app_data_dir() -> PathBuf {
         return dir.clone();
     }
 
-    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "FXCursor", "FXCursor") {
+    if let Some(proj_dirs) = directories::ProjectDirs::from("com", "nairodorian", "fxcursor") {
         let config_dir = proj_dirs.config_dir().to_path_buf();
         let _ = std::fs::create_dir_all(&config_dir);
         return config_dir;

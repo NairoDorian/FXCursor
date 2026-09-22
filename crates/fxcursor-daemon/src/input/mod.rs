@@ -1,6 +1,9 @@
+//! Input tracking: polls pointer position and mouse button state.
+
 #[cfg(windows)]
 pub mod windows;
 
+/// Tracks global cursor position and mouse button states.
 pub struct InputTracker {
     #[cfg(windows)]
     tracker: windows::win32::Win32InputTracker,

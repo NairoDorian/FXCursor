@@ -21,6 +21,18 @@ fn describe(info: &PanicHookInfo<'_>) -> String {
     format!("[panic] thread '{thread_name}' panicked at {location}: {message}")
 }
 
+fn panic_log_path() -> std::path::PathBuf {
+    if let Some(dir) = crate::portable::data_dir() {
+        return dir.join("panic.log");
+    }
+    if let Some(dirs) = directories::ProjectDirs::from("com", "nairodorian", "fxcursor") {
+        let dir = dirs.data_dir();
+        let _ = std::fs::create_dir_all(dir);
+        return dir.join("panic.log");
+    }
+    std::path::PathBuf::from("panic.log")
+}
+
 /// Installs the logging panic hook. Call once at application launch.
 pub fn install() {
     let default_hook = std::panic::take_hook();
@@ -28,10 +40,11 @@ pub fn install() {
     std::panic::set_hook(Box::new(move |info| {
         let msg = describe(info);
         eprintln!("{msg}");
+        let path = panic_log_path();
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("panic.log")
+            .open(&path)
         {
             use std::io::Write;
             let _ = writeln!(f, "{msg}");

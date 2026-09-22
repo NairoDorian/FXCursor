@@ -1,3 +1,6 @@
+//! Core protocol definitions, configuration schema, curated presets, and self-healing deserialization
+//! shared across the FXCursor engine, desktop shell, and tooling.
+
 pub mod config;
 pub mod presets;
 pub mod self_healing;

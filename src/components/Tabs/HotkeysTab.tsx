@@ -56,7 +56,7 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
               type="text"
               value={props.general.global_hotkey}
               onInput={(e) => update('global_hotkey', e.currentTarget.value)}
-              style="background: #08080a; border: 1px solid var(--card-border); border-radius: 6px; color: var(--accent-cyan); font-family: monospace; font-weight: 700; font-size: 13px; padding: 6px 12px; width: 140px; text-align: center; outline: none;"
+              style="background: #08080a; border: 1px solid var(--card-border); border-radius: 6px; color: var(--accent-primary); font-family: monospace; font-weight: 700; font-size: 13px; padding: 6px 12px; width: 140px; text-align: center; outline: none;"
             />
           </div>
         </div>
@@ -180,4 +180,5 @@ export const STUDIO_SHORTCUTS: [string, string][] = [
   ['Ctrl + E', 'Toggle the effects on / off'],
   ['Ctrl + 1 … 9', 'Switch tabs: Layers, Trail, Head, Ripples, Particles, Satellites, Presets, Hotkeys, Console'],
   ['Ctrl + 0', 'Developer Hub'],
+  ['Ctrl + /', 'About FXCursor & Architecture Reference'],
 ];

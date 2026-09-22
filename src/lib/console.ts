@@ -1,3 +1,6 @@
+import { commands } from './bindings';
+import { listen } from '@tauri-apps/api/event';
+
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogEntry {
@@ -76,9 +79,14 @@ if (typeof window !== 'undefined') {
 let backendAttached = false;
 
 /**
- * Pulls the backend's recent log history and subscribes to the `rust-log` event so Rust
- * `log::info!`/`warn!`/`error!` records show up in the Dev Console next to browser output.
- * Safe to call more than once; only the first call attaches.
+ * Connects the frontend Dev Console to the Rust logging backend.
+ *
+ * Pulls the backend's recent log history via `commands.getRecentLogs()` and
+ * subscribes to the `rust-log` event so that records emitted via Rust `log::info!`,
+ * `warn!`, `debug!`, and `error!` are displayed in the Studio Dev Console alongside
+ * browser console output.
+ *
+ * Idempotent: safe to call multiple times; only the first invocation initializes the listener.
  */
 export function attachBackendLogs() {
   if (backendAttached) return;
@@ -93,10 +101,6 @@ export function attachBackendLogs() {
 
   void (async () => {
     try {
-      const [{ commands }, { listen }] = await Promise.all([
-        import('./bindings'),
-        import('@tauri-apps/api/event'),
-      ]);
       const history = await commands.getRecentLogs();
       for (const rec of history) {
         pushLog(toLevel(rec.level), rec.message, shortTarget(rec.target));
@@ -110,3 +114,4 @@ export function attachBackendLogs() {
     }
   })();
 }
+

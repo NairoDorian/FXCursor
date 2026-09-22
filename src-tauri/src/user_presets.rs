@@ -124,7 +124,16 @@ pub fn save(
     };
     let json = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
     let path = file_for(&dir, &id);
-    std::fs::write(&path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let counter = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("tmp.{}.{}", std::process::id(), counter));
+    if let Err(e) = std::fs::write(&tmp, json) {
+        return Err(format!("cannot write {}: {e}", tmp.display()));
+    }
+    if let Err(e) = std::fs::rename(&tmp, &path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("cannot replace {}: {e}", path.display()));
+    }
     log::info!("[presets] saved '{name}' as {}", path.display());
     Ok(PresetInfo {
         id,

@@ -1,3 +1,5 @@
+//! Transparent click-through overlay window creation across virtual desktop bounds.
+
 pub mod windows;
 
 use std::sync::Arc;

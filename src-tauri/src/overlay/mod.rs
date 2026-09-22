@@ -69,6 +69,13 @@ impl OverlayState {
 
         let _ = window.set_ignore_cursor_events(true);
         display::raise_timer_resolution();
+        struct TimerResolutionGuard;
+        impl Drop for TimerResolutionGuard {
+            fn drop(&mut self) {
+                display::restore_timer_resolution();
+            }
+        }
+        let _timer_guard = TimerResolutionGuard;
 
         // The builder only accepts logical sizes; enforce the physical virtual-desktop rect here.
         let mut bounds = display::virtual_bounds(&app_handle);
@@ -325,7 +332,8 @@ impl OverlayState {
                         // once the last file is on disk.
                         let done = req.frame_done(out.display().to_string(), now);
                         let reply = done.then(|| (req.reply.clone(), req.summary()));
-                        std::thread::spawn(move || match (frame.write_png(&out), reply) {
+                        let builder = std::thread::Builder::new().name("capture-png-worker".into());
+                        let _ = builder.spawn(move || match (frame.write_png(&out), reply) {
                             (Ok(_), Some((reply, summary))) => {
                                 let _ = reply.send(Ok(summary));
                             }

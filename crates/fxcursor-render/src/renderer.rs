@@ -791,6 +791,13 @@ pub fn build_layer_capsules(
     }
 }
 
+/// The unified cross-platform hardware-accelerated cursor effects renderer.
+///
+/// Encapsulates:
+/// - CPU physics simulation ([`TrailChain`], velocity squish head, particles, ripples, satellites).
+/// - Adaptive Catmull-Rom resampling and tapered round capsule instancing.
+/// - wgpu 30 graphics pipelines: depth max-coverage pre-pass, capsule color pass, and SDF billboard pass.
+/// - On-overlay FPS heads-up display (HUD) rendered via a 3×5 dot-matrix bitmap font.
 pub struct OverlayRenderer {
     capsule_prepass_pipeline: RenderPipeline,
     capsule_color_pipeline: RenderPipeline,
@@ -1271,8 +1278,11 @@ impl OverlayRenderer {
                 && (self.squishy.current_scale - self.squishy.target_scale).abs() > 0.001)
     }
 
-    /// (Re)creates the depth attachment when the surface size changes.
+    /// (Re)creates the depth attachment when the surface size changes, clamped to GPU limits.
     fn ensure_depth(&mut self, device: &Device, width: u32, height: u32) {
+        let max_dim = device.limits().max_texture_dimension_2d;
+        let width = width.clamp(1, max_dim);
+        let height = height.clamp(1, max_dim);
         let needs_new = match &self.depth {
             Some(d) => d.width != width || d.height != height,
             None => true,
@@ -1283,8 +1293,8 @@ impl OverlayRenderer {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ribbon_depth"),
             size: wgpu::Extent3d {
-                width: width.max(1),
-                height: height.max(1),
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

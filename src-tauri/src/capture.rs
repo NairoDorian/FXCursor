@@ -151,6 +151,7 @@ impl CapturedFrame {
         let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), self.width, self.height);
         encoder.set_color(png::ColorType::Rgb);
         encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Fast);
         let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
         writer.write_image_data(&self.rgb).map_err(|e| e.to_string())?;
         writer.finish().map_err(|e| e.to_string())?;
@@ -350,5 +351,27 @@ mod tests {
         assert_eq!(single.frame_path(), PathBuf::from("one.png"), "single snapshots keep their name");
         assert!(single.frame_done("one.png".into(), t0));
         assert_eq!(single.summary(), "one.png");
+    }
+
+    #[test]
+    fn captured_frame_writes_valid_png_file() {
+        let frame = CapturedFrame {
+            width: 2,
+            height: 2,
+            rgb: vec![
+                255, 0, 0,
+                0, 255, 0,
+                0, 0, 255,
+                255, 255, 255,
+            ],
+        };
+        let out_dir = std::env::temp_dir().join(format!("fxcursor_test_capture_{}", std::process::id()));
+        let out_path = out_dir.join("test_shot.png");
+        let result = frame.write_png(&out_path);
+        assert!(result.is_ok());
+        let bytes = std::fs::read(&out_path).expect("png file should exist");
+        // PNG magic signature: 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'
+        assert_eq!(&bytes[..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+        let _ = std::fs::remove_dir_all(&out_dir);
     }
 }

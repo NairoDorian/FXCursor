@@ -70,6 +70,17 @@ const targets: MirrorTarget[] = [
     },
   },
   {
+    name: 'crates/fxcursor-render/Cargo.toml',
+    path: resolve(rootDir, 'crates/fxcursor-render/Cargo.toml'),
+    readVersion: (content) => {
+      const match = content.match(/^version\s*=\s*"([^"]+)"/m);
+      return match ? match[1] : null;
+    },
+    writeVersion: (content, version) => {
+      return content.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
+    },
+  },
+  {
     name: 'src-tauri/tauri.conf.json',
     path: resolve(rootDir, 'src-tauri/tauri.conf.json'),
     readVersion: (content) => {

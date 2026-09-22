@@ -1,9 +1,12 @@
+//! Win32 cursor position and mouse button state polling via GetCursorPos and GetAsyncKeyState.
+
 #[cfg(windows)]
 pub mod win32 {
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+    /// Win32 cursor position and button state poller.
     pub struct Win32InputTracker {
         pub last_x: f32,
         pub last_y: f32,

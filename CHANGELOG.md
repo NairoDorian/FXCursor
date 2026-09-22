@@ -1,11 +1,37 @@
 # Changelog
 
-## [Unreleased] - 2026-09-10
+## [Unreleased] - 2026-09-17
+
+### Fixed
+
+- **Reactive Toast State Synchronization**: Fixed inverted notification state in `src/App.tsx` when toggling effects with `Ctrl + E` by binding directly to the calculated next state.
+- **Vite Bundle Cleanliness**: Replaced dynamic module imports in `src/lib/console.ts` with static imports, eliminating `[INEFFECTIVE_DYNAMIC_IMPORT]` warnings and optimizing chunking.
+- **GPU Device Texture Dimension Clamping**: Clamped depth texture dimensions in `crates/fxcursor-render/src/renderer.rs` against `device.limits().max_texture_dimension_2d` to prevent driver panics on ultra-wide multi-monitor configurations.
+- **Daemon Named Pipe Disconnect Safety**: Added graceful disconnect cleanup on handle clone errors in `crates/fxcursor-daemon/src/ipc/mod.rs`.
+- **Theme Accent Token Parity**: Replaced legacy variable reference with `var(--accent-primary)` in `src/components/Tabs/HotkeysTab.tsx`.
+- **Named Capture Worker Threads**: Explicitly named capture worker threads `"capture-png-worker"` in `src-tauri/src/overlay/mod.rs` for enhanced observability.
+- **Daemon IPC Deadlock**: resolved re-entrant `state.config.write()` lock acquisition in `IpcRequest::ToggleEnabled` (`crates/fxcursor-daemon/src/ipc/mod.rs`), enabling all 5 daemon unit tests to pass cleanly without freezing workspace test execution.
+- **Windows Hook Cleanup**: added explicit `UnhookWindowsHookEx(hook)` on message loop exit in `src-tauri/src/input/windows.rs`.
+- **Atomic Config & User Preset Persistence**: upgraded atomic file saving in `src-tauri/src/settings_repair.rs`, `src-tauri/src/user_presets.rs`, and `crates/fxcursor-daemon/src/state.rs` using unique PID/counter temporary file paths and automatic cleanup on failure.
+- **Tray Icon Initialization Safety**: replaced unchecked `app.default_window_icon().unwrap()` in `src-tauri/src/lib.rs` with safe optional attachment, preventing panics in environments without packaged window icons.
+- **Snapshot Capture Speed Optimization**: configured `png::Compression::Fast` in `src-tauri/src/capture.rs` to accelerate burst frame captures and eliminate disk write bottlenecks during transient effect inspection.
+- **Depth Target Surface Clamping**: clamped width and height at entry of `ensure_depth` in `crates/fxcursor-render/src/renderer.rs` to prevent redundant depth texture re-creations on zero-dimension surface events.
+- **Timer Resolution Lifecycle**: added `restore_timer_resolution` (`timeEndPeriod(1)`) and an RAII `TimerResolutionGuard` in `src-tauri/src/overlay/mod.rs`.
+- **Panic Logging Path**: directed `panic.log` to the resolved application data directory (or portable `Data/` folder) with CWD fallback in `src-tauri/src/panic_log.rs`.
+- **Version Manifest Tooling**: added `crates/fxcursor-render/Cargo.toml` to the version check and bump targets in `scripts/before-commit.ts`.
+
+### Added
+
+- **Dev Console Debug Filter**: added `debug` level button to log filters in `src/components/Tabs/DevConsoleTab.tsx`.
+- **Full In-Window Shortcut Navigation**: added `Ctrl + /` (and `Ctrl + ?`) shortcut in `src/App.tsx` for immediate navigation to the About tab, and documented all 11 tab shortcuts in `src/components/Tabs/HotkeysTab.tsx`.
+- **W3C ARIA Accessibility**: added `role="tablist"`, `role="tab"`, `aria-selected`, and `aria-label` attributes to the Studio tab bar and master effect toggle switch in `src/App.tsx`.
+- **Unit Test Coverage Expansion**: added unit tests for `CapturedFrame::write_png` (verifying PNG magic header `0x89504E47`), completely invalid JSON syntax self-healing, and array length mismatch self-healing across the test suites (52 tests passed total).
+- **Exhaustive Code Documentation**: comprehensive docstrings across all `AppConfig` structs in `crates/fxcursor-protocol`, `OverlayRenderer` architecture in `crates/fxcursor-render`, and daemon state in `crates/fxcursor-daemon`.
 
 ### Changed
 
 - **Rust edition 2024** across the workspace (rustc 1.98.1): `cargo fix --edition` migration, nested `if let`s rewritten as let-chains, clippy clean under the new edition.
-- Dependencies at the newest pre-releases: SolidJS 2.0.0-rc.7 (cleanups are now returned from `onSettled` / effects instead of `onCleanup`), Vite 8.3 beta, TypeScript 7.1 dev 2026-09-09, oxlint 1.82, bun-types canary; transitive crates refreshed. The daemon moved to winit 0.31.0-beta.3 (trait-object `Window` / `ActiveEventLoop`, `can_create_surfaces`, `SurfaceResized`). The unused `windows-core` and `libc` dependencies were dropped.
+- Dependencies at the newest pre-releases: SolidJS 2.0.0-rc.7 (cleanups are now returned from `onSettled` / effects instead of `onCleanup`), Vite 8.3 beta, TypeScript 7.1 dev, oxlint 1.82, bun-types canary; transitive crates refreshed. The daemon moved to winit 0.31.0-beta.3 (trait-object `Window` / `ActiveEventLoop`, `can_create_surfaces`, `SurfaceResized`). The unused `windows-core` and `libc` dependencies were dropped.
 
 ## [0.5.0] - 2026-09-09
 
@@ -60,8 +86,8 @@
 
 - macOS/Linux input still polls via `device_query`; only Windows has the OS hook.
 - `crates/fxcursor-daemon` is a Windows-only prototype with no client; `physics.wgsl` is not dispatched.
-- `fps_counter.align_*` fields are reserved for a future on-overlay HUD.
-- `` has not been committed yet.
+- `fps_counter.align_*` corner placement configuration is currently fixed to the primary display; interactive corner switching in the UI is planned.
+- Automated GitHub Actions CI workflow triggers on repository pushes and pull requests.
 
 ## [0.4.0] - 2026-08-30
 

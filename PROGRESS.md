@@ -1,8 +1,8 @@
 # FXCursor V4 — Project Progress, Status & Roadmap
 
-> **Milestone Status**: 🟡 Under construction — Tauri single-process path works end to end on Windows; V4 "micro-daemon" architecture is a prototype. Repository restructured and renamed **FXCursor** on 2026-09-09 (app at the root, V3 under `legacy/`).
+> **Milestone Status**: 🟡 Under construction — Tauri single-process path works end to end on Windows; V4 "micro-daemon" architecture is a prototype with stabilized IPC. Repository restructured and renamed **FXCursor** (app at the root, V3 under `legacy/`).
 > **Version**: `0.5.0` (pre-release)
-> **Last audit**: 2026-09-09, session 6 (full code read of `src-tauri`, `src`, `crates/*`; trail physics verified frame by frame with burst snapshots)
+> **Last audit**: 2026-09-17, session 7 (comprehensive 3-wave full review, audit & deep hardening; resolved daemon IPC deadlock, Win32 hook cleanup, atomic saves for configs/presets, tray icon safety, fast PNG bursts, depth surface clamping, ARIA tab accessibility, doc comments across crates, 52 passed Cargo tests + 17 Bun tests, and complete markdown sync)
 > **Tech Stack**: Tauri 2.11, Bun 1.4, SolidJS 2.0.0-rc.7, TypeScript 7.1-dev, Vite 8.3 beta, wgpu 30, windows 0.62, Rust 2024 edition (rustc 1.98.1)
 
 > [!CRITICAL]
@@ -123,21 +123,37 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 - [x] Verified with 30-frame bursts at 50 ms: stop, reversal and 90° turn all keep a clean rounded tip at the pointer (`scripts/snapshots/`).
 - [x] Renamed **FXCursor**: crates `fxcursor-{protocol,render,daemon}`, binary `fxcursor`, identifier `com.nairodorian.fxcursor` (the previous `com.cursorfx.studio` config is adopted on first launch), product name FXCursor, window title "FXCursor Studio". Repository restructured: the app is the root, V3 / original mods / old scripts live under `legacy/`, CI runs at the root.
 
+### 2.10 Comprehensive audit, daemon stabilization & documentation (2026-09-17, session 7)
+
+- [x] **Daemon Deadlock Resolved**: Fixed re-entrant `state.config.write()` write lock acquisition in `IpcRequest::ToggleEnabled` (`crates/fxcursor-daemon/src/ipc/mod.rs`), enabling all daemon unit tests to pass without stalling `cargo test --workspace`.
+- [x] **Daemon Pipe Disconnect Safety**: Added graceful disconnect cleanup on handle clone errors in `crates/fxcursor-daemon/src/ipc/mod.rs`.
+- [x] **Safe Atomic File Saving**: Upgraded atomic persistence in `src-tauri/src/settings_repair.rs` and `crates/fxcursor-daemon/src/state.rs` using unique PID/counter temporary files and clean removal upon rename failure.
+- [x] **Windows Hook Cleanup**: Added explicit `UnhookWindowsHookEx(hook)` on message loop exit in `src-tauri/src/input/windows.rs`.
+- [x] **Timer Resolution Cleanup**: Added `restore_timer_resolution()` (`timeEndPeriod(1)`) and an RAII `TimerResolutionGuard` in `src-tauri/src/overlay/mod.rs`.
+- [x] **Reliable Panic Logging**: Directed `panic.log` to the resolved application data directory with fallback to CWD in `src-tauri/src/panic_log.rs`.
+- [x] **Tooling Parity**: Added `crates/fxcursor-render/Cargo.toml` to the version targets in `scripts/before-commit.ts`.
+- [x] **Dev Console QoL & Log Stream**: Added `debug` log level filter button in `src/components/Tabs/DevConsoleTab.tsx`, and converted `src/lib/console.ts` to clean static imports to eliminate Vite chunking warnings.
+- [x] **Reactive Toast Fix**: Corrected inverted state reporting in `src/App.tsx` when toggling effects via `Ctrl + E`.
+- [x] **GPU Device Texture Dimension Clamping**: Clamped depth texture dimensions in `crates/fxcursor-render/src/renderer.rs` against `device.limits().max_texture_dimension_2d` to prevent driver panics on ultra-wide multi-monitor configurations.
+- [x] **Theme Accent Consistency**: Unified `--accent-primary` tokens across `HotkeysTab.tsx`.
+- [x] **Named Capture Worker Threads**: Assigned explicit thread identifier `"capture-png-worker"` in `src-tauri/src/overlay/mod.rs` for enhanced observability.
+- [x] **Exhaustive Code Comments**: Documented all `AppConfig` and subsystem structs in `fxcursor-protocol`, `OverlayRenderer` architecture in `fxcursor-render`, and daemon state in `fxcursor-daemon`.
+
 ---
 
-## 3. Verification matrix (2026-09-09)
+## 3. Verification matrix (2026-09-17)
 
 | Check              | Command                                                 | Result                                                                                                                |
 | :----------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------- |
 | TypeScript         | `bun run typecheck`                                     | ✅ 0 errors                                                                                                           |
-| Lint               | `bun run lint`                                          | ✅ clean                                                                                                              |
-| Vite bundle        | `bun run build`                                         | ✅ 101 kB JS / 4.3 kB CSS                                                                                             |
+| Lint               | `bun run lint`                                          | ✅ clean (oxlint on 39 files, 0 warnings, 0 errors)                                                                   |
+| Vite bundle        | `bun run build`                                         | ✅ 130 kB JS / 4.3 kB CSS (0 warnings)                                                                                |
 | Bun unit tests     | `bun test`                                              | ✅ 17 passed (presets, theme, version, config parity, effect-mode parity)                                             |
 | Cargo workspace    | `rtk cargo check --workspace`                           | ✅ 0 errors, 0 warnings                                                                                               |
-| Cargo tests        | `rtk cargo test --workspace`                            | ✅ 44 passed (protocol 4 + parity 2, app 18 incl. capture/presets/CLI, render 18 + parity 2)                          |
+| Cargo tests        | `rtk cargo test --workspace`                            | ✅ 52 passed (protocol 6 + parity 2, render 18 + parity 2, app 19 incl. capture/presets/CLI/panic, daemon 5)          |
 | Live run (Windows) | `bun run tauri dev`                                     | ✅ virtual desktop (−308, 0) 2560×2680 across two monitors, 240 Hz pacing, RTX 4070 (Vulkan), hook installed, config adopted from the CursorFX install, bindings regenerated |
 | Trail transients   | `scripts/snapshots/snapshot_motion.ps1` (30-frame bursts) | ✅ stop / reversal / 90° turn keep a clean rounded tip at the pointer; HUD verified with `--apply` + `--capture`     |
-| Clippy             | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ clean                                                                                                              |
+| Clippy             | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ clean (0 warnings)                                                                                                 |
 | Release build      | `bun run tauri build`                                   | ✅ 6 m 22 s, `fxcursor.exe` 11.7 MB, NSIS installer `FXCursor_0.5.0_x64-setup.exe` 3.6 MB                              |
 | Portable zip       | `bun run package:portable`                              | ✅ `fxcursor-portable-0.5.0-win-x64.zip` 4.6 MB                                                                        |
 | GitHub Actions     | `.github/workflows/ci.yml`                              | 🟡 first runs on the new repository: Windows job reached clippy (one lint fixed), Ubuntu job needed the 24.04 package list — fixed in the follow-up commit |

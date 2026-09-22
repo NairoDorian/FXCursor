@@ -10,8 +10,9 @@ use windows_sys::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetCursorPos, GetMessageW, HC_ACTION, MSG, MSLLHOOKSTRUCT,
-    SetWindowsHookExW, TranslateMessage, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+    SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_MOUSE_LL, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
 
 static HUB: OnceLock<Arc<InputHub>> = OnceLock::new();
@@ -38,13 +39,19 @@ pub fn spawn_hook_thread(hub: Arc<InputHub>) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+            UnhookWindowsHookEx(hook);
             hub.set_hook_active(false);
+            log::info!("[input] low-level mouse hook uninstalled");
         });
     if let Err(err) = result {
         log::warn!("[input] could not spawn mouse-hook-thread: {err}");
     }
 }
-
+/// Low-level mouse hook callback procedure invoked by the Windows OS message system.
+///
+/// Handles `HC_ACTION` messages, unpacks the [`MSLLHOOKSTRUCT`] payload, extracts pointer coordinates
+/// in physical virtual desktop space, identifies button events (including XBUTTON1/XBUTTON2),
+/// and notifies the global [`InputHub`]. Always chains to `CallNextHookEx` to preserve system hook transparency.
 unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         if code == HC_ACTION as i32

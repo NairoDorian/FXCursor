@@ -85,8 +85,12 @@ export function AppContent() {
         void handleSaveNow();
       } else if (key === 'e') {
         e.preventDefault();
-        setConfig({ ...config(), enabled: !config().enabled });
-        toast.info(`Effects ${config().enabled ? 'enabled' : 'disabled'}`);
+        const nextEnabled = !config().enabled;
+        setConfig({ ...config(), enabled: nextEnabled });
+        toast.info(`Effects ${nextEnabled ? 'enabled' : 'disabled'}`);
+      } else if (key === '/' || key === '?') {
+        e.preventDefault();
+        setActiveTab('about');
       } else if (/^[0-9]$/.test(key)) {
         const index = key === '0' ? 9 : Number(key) - 1;
         const tab = SHORTCUT_TABS[index];
@@ -391,9 +395,10 @@ export function AppContent() {
               <For each={EFFECT_MODES}>{(m) => <option value={m.id}>{m.label}</option>}</For>
             </select>
           </label>
-          <label class="switch">
+          <label class="switch" title="Toggle master effects">
             <input
               type="checkbox"
+              aria-label="Toggle master visual effects"
               checked={config().enabled}
               onChange={(e) => setConfig({ ...config(), enabled: e.currentTarget.checked })}
             />
@@ -403,68 +408,90 @@ export function AppContent() {
       </header>
 
       {/* Tabs Navigation */}
-      <nav class="tab-nav">
+      <nav class="tab-nav" role="tablist" aria-label="Settings Categories">
         <button
+          role="tab"
+          aria-selected={activeTab() === 'layers' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'layers' ? 'active' : ''}`}
           onClick={() => setActiveTab('layers')}
         >
           4-Layer Design
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'trail' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'trail' ? 'active' : ''}`}
           onClick={() => setActiveTab('trail')}
         >
           Trail Physics
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'head' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'head' ? 'active' : ''}`}
           onClick={() => setActiveTab('head')}
         >
           Squishy Head
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'ripples' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'ripples' ? 'active' : ''}`}
           onClick={() => setActiveTab('ripples')}
         >
           Click Ripples
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'particles' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'particles' ? 'active' : ''}`}
           onClick={() => setActiveTab('particles')}
         >
           Particles
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'satellites' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'satellites' ? 'active' : ''}`}
           onClick={() => setActiveTab('satellites')}
         >
           Satellites
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'presets' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'presets' ? 'active' : ''}`}
           onClick={() => setActiveTab('presets')}
         >
           Presets
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'hotkeys' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'hotkeys' ? 'active' : ''}`}
           onClick={() => setActiveTab('hotkeys')}
         >
           Hotkeys & Tray
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'console' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'console' ? 'active' : ''}`}
           onClick={() => setActiveTab('console')}
         >
           Dev Console
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'developer' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'developer' ? 'active' : ''}`}
           onClick={() => setActiveTab('developer')}
         >
           Developer Hub
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab() === 'about' ? 'true' : 'false'}
           class={`tab-btn ${activeTab() === 'about' ? 'active' : ''}`}
           onClick={() => setActiveTab('about')}
         >

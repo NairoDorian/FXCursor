@@ -220,4 +220,29 @@ mod tests {
         assert!(outcome.value.enabled);
         assert_eq!(outcome.value.trail.length, 80); // restored default
     }
+
+    #[test]
+    fn test_heals_completely_invalid_syntax() {
+        let bad_syntax = "{ not: valid json at all ...";
+        let outcome: RepairOutcome<AppConfig> = deserialize_with_self_healing(bad_syntax).unwrap();
+        assert!(outcome.needs_rewrite);
+        assert_eq!(outcome.value, AppConfig::default());
+        assert_eq!(outcome.repaired_paths, vec!["<entire document corrupted>"]);
+    }
+
+    #[test]
+    fn test_heals_array_length_mismatch() {
+        let partial_array = r#"{
+            "enabled": true,
+            "trail": {
+                "layers": [
+                    { "enabled": false }
+                ]
+            }
+        }"#;
+        let outcome: RepairOutcome<AppConfig> =
+            deserialize_with_self_healing(partial_array).unwrap();
+        assert!(outcome.needs_rewrite);
+        assert_eq!(outcome.value.trail.layers.len(), 4);
+    }
 }

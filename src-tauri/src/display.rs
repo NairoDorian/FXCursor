@@ -72,7 +72,6 @@ pub fn primary_scale_factor(app: &AppHandle) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// Current refresh rate of the primary display in Hz, when the OS reports one.
 /// Rectangle of the primary monitor in physical pixels `(x, y, width, height)`: the HUD is
 /// anchored to it because a corner of the whole virtual desktop can lie outside every screen.
 /// Falls back to the virtual bounds on other platforms.
@@ -90,6 +89,7 @@ pub fn primary_rect() -> (f32, f32, f32, f32) {
     (x as f32, y as f32, w as f32, h as f32)
 }
 
+/// Current refresh rate of the primary display in Hz, when the OS reports one.
 pub fn refresh_rate_hz() -> Option<f32> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -117,6 +117,15 @@ pub fn raise_timer_resolution() {
     unsafe {
         use windows_sys::Win32::Media::timeBeginPeriod;
         let _ = timeBeginPeriod(1);
+    }
+}
+
+/// Restores the default OS timer resolution previously requested with `raise_timer_resolution`.
+pub fn restore_timer_resolution() {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::Media::timeEndPeriod;
+        let _ = timeEndPeriod(1);
     }
 }
 

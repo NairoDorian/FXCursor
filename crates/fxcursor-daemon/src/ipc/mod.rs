@@ -1,3 +1,5 @@
+//! Named pipe (Windows) and Unix domain socket (Unix) IPC server for the daemon.
+
 use crate::state::StateManager;
 use fxcursor_protocol::{AppConfig, get_builtin_presets};
 use serde::{Deserialize, Serialize};
@@ -63,10 +65,12 @@ impl IpcServer {
                 IpcResponse::Config(new_cfg)
             }
             Ok(IpcRequest::ToggleEnabled) => {
-                let mut cfg = state.config.write();
-                cfg.enabled = !cfg.enabled;
-                let enabled = cfg.enabled;
-                state.save_config(cfg.clone());
+                let (new_cfg, enabled) = {
+                    let mut cfg = state.config.write();
+                    cfg.enabled = !cfg.enabled;
+                    (cfg.clone(), cfg.enabled)
+                };
+                state.save_config(new_cfg);
                 IpcResponse::Toggled(enabled)
             }
             Ok(IpcRequest::ApplyPreset(preset_id)) => {
@@ -130,7 +134,13 @@ impl IpcServer {
                     let mut file = unsafe { std::fs::File::from_raw_handle(raw_handle as _) };
                     let file_read = match file.try_clone() {
                         Ok(f) => f,
-                        Err(_) => return,
+                        Err(err) => {
+                            log::warn!("[ipc] failed to clone pipe handle: {err}");
+                            unsafe {
+                                let _ = DisconnectNamedPipe(handle);
+                            }
+                            return;
+                        }
                     };
                     let mut reader = BufReader::new(file_read);
                     let mut line = String::new();
@@ -211,5 +221,46 @@ impl IpcServer {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ipc_handle_ping() {
+        let state = Arc::new(StateManager::new());
+        let resp = IpcServer::handle_message(r#"{"type":"Ping"}"#, &state);
+        assert!(resp.contains(r#""type":"Pong""#));
+    }
+
+    #[test]
+    fn test_ipc_handle_get_config() {
+        let state = Arc::new(StateManager::new());
+        let resp = IpcServer::handle_message(r#"{"type":"GetConfig"}"#, &state);
+        assert!(resp.contains(r#""type":"Config""#));
+    }
+
+    #[test]
+    fn test_ipc_handle_toggle_enabled() {
+        let state = Arc::new(StateManager::new());
+        let initial = state.config.read().enabled;
+        let resp = IpcServer::handle_message(r#"{"type":"ToggleEnabled"}"#, &state);
+        assert!(resp.contains(&format!(r#""type":"Toggled","payload":{}"#, !initial)));
+    }
+
+    #[test]
+    fn test_ipc_handle_invalid_preset() {
+        let state = Arc::new(StateManager::new());
+        let resp = IpcServer::handle_message(r#"{"type":"ApplyPreset","payload":"nonexistent"}"#, &state);
+        assert!(resp.contains(r#""type":"Error""#));
+    }
+
+    #[test]
+    fn test_ipc_handle_invalid_json() {
+        let state = Arc::new(StateManager::new());
+        let resp = IpcServer::handle_message("not valid json", &state);
+        assert!(resp.contains(r#""type":"Error""#));
     }
 }

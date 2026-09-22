@@ -1,3 +1,5 @@
+//! GPU initialization, wgpu instance, adapter, device and swapchain surface configuration.
+
 use std::sync::Arc;
 use wgpu::{
     Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
@@ -6,6 +8,7 @@ use wgpu::{
 };
 use winit::window::Window;
 
+/// Encapsulates the wgpu graphics context and presentation swapchain.
 pub struct GpuContext {
     pub instance: Instance,
     pub surface: Surface<'static>,
