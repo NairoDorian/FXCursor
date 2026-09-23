@@ -1,8 +1,15 @@
 //! Windows event source: `WH_MOUSE_LL` low-level mouse hook on a dedicated message-loop thread,
-//! plus a `GetCursorPos` fallback poll used by the render loop.
+//! plus the `GetCursorPos` poll the render loop runs every iteration.
 //!
-//! Low-level hooks are muted while an elevated (UAC) window has the foreground; the fallback poll
-//! keeps the trail following the cursor in that case, at the cost of edge-only click detection.
+//! **Position comes from the poll only** (as in every legacy build). The hook runs *before* the
+//! system applies a move, and `MSLLHOOKSTRUCT.pt` is not clipped to the screen or to
+//! `ClipCursor`: pushing against a screen edge reports positions past it. Letting both sources
+//! write the position made the target alternate between the clipped and unclipped values (head
+//! jitter at edges) and could briefly step backwards. The hook therefore only wakes the render
+//! loop on motion and records button transitions (clicks shorter than a frame are never lost).
+//!
+//! Low-level hooks are muted while an elevated (UAC) window has the foreground: the poll keeps
+//! the trail following the cursor, but clicks are not seen until the hook resumes.
 
 use super::InputHub;
 use std::sync::{Arc, OnceLock};
@@ -60,7 +67,8 @@ unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPA
             let info = &*(lparam as *const MSLLHOOKSTRUCT);
             let (x, y) = (info.pt.x as f32, info.pt.y as f32);
             match wparam as u32 {
-                WM_MOUSEMOVE => hub.push_move(x, y),
+                // Wake-up only: the render loop polls the clipped position itself.
+                WM_MOUSEMOVE => hub.notify(),
                 WM_LBUTTONDOWN => hub.push_button(0, true, x, y),
                 WM_LBUTTONUP => hub.push_button(0, false, x, y),
                 WM_RBUTTONDOWN => hub.push_button(1, true, x, y),
@@ -80,7 +88,8 @@ unsafe extern "system" fn mouse_hook_proc(code: i32, wparam: WPARAM, lparam: LPA
     }
 }
 
-/// Fallback poll of the cursor position (works even when hooks are muted by UIPI).
+/// Polls the cursor position: the single position source on Windows (works even when hooks
+/// are muted by UIPI).
 pub fn poll_cursor(hub: &InputHub) {
     unsafe {
         let mut pt = POINT { x: 0, y: 0 };

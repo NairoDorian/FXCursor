@@ -30,7 +30,7 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
         title="Click Shockwave Ripples"
         desc="Expanding concentric SDF ring shockwaves triggered on mouse button clicks"
         headerRight={
-          <Toggle checked={props.ripple.enabled} onChange={(v) => update({ enabled: v })} />
+          <Toggle ariaLabel="Enable click ripples" checked={props.ripple.enabled} onChange={(v) => update({ enabled: v })} />
         }
       >
         <Slider

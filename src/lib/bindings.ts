@@ -14,7 +14,6 @@ export const commands = {
 	resetDefaults: () => __TAURI_INVOKE<AppConfig>("reset_defaults").then((v) => (({...v,trail:({...v.trail,layers:v.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.head,color:v.head.color.map(i=>i)}),ripple:({...v.ripple,color_left:v.ripple.color_left.map(i=>i),color_right:v.ripple.color_right.map(i=>i),color_middle:v.ripple.color_middle.map(i=>i)}),particles:({...v.particles,color:v.particles.color.map(i=>i)}),satellites:({...v.satellites,color:v.satellites.color.map(i=>i)})}) as typeof v)),
 	/**  Writes the current configuration to disk immediately (bypassing the autosave debounce). */
 	saveConfig: () => __TAURI_INVOKE<string>("save_config"),
-	/**  Built-in presets, with Rust as the single source of truth. */
 	listPresets: () => __TAURI_INVOKE<PresetInfo[]>("list_presets").then((v) => (v.map(i=>({...i,config:({...i.config,trail:({...i.config.trail,layers:i.config.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...i.config.head,color:i.config.head.color.map(i=>i)}),ripple:({...i.config.ripple,color_left:i.config.ripple.color_left.map(i=>i),color_right:i.config.ripple.color_right.map(i=>i),color_middle:i.config.ripple.color_middle.map(i=>i)}),particles:({...i.config.particles,color:i.config.particles.color.map(i=>i)}),satellites:({...i.config.satellites,color:i.config.satellites.color.map(i=>i)})})})) as typeof v)),
 	applyPreset: (id: string) => __TAURI_INVOKE<AppConfig>("apply_preset", { id }).then((v) => (({...v,trail:({...v.trail,layers:v.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.head,color:v.head.color.map(i=>i)}),ripple:({...v.ripple,color_left:v.ripple.color_left.map(i=>i),color_right:v.ripple.color_right.map(i=>i),color_middle:v.ripple.color_middle.map(i=>i)}),particles:({...v.particles,color:v.particles.color.map(i=>i)}),satellites:({...v.satellites,color:v.satellites.color.map(i=>i)})}) as typeof v)),
 	/**
@@ -39,25 +38,60 @@ export const commands = {
 };
 
 /* Types */
+/**  Root configuration tree for FXCursor, persisted to `config.json`. */
 export type AppConfig = {
+	/**  Master toggle for all overlay cursor effects. */
 	enabled: boolean,
+	/**  Active effect mode gating visual components. */
 	effect_mode: EffectMode,
+	/**  General application and OS integration settings. */
 	general: GeneralConfig,
+	/**  Ribbon trail physics and 4-layer master design parameters. */
 	trail: TrailConfig,
+	/**  Velocity-elongated SDF cursor head settings. */
 	head: HeadConfig,
+	/**  Click-triggered expanding shockwave ripple settings. */
 	ripple: RippleConfig,
+	/**  Click-triggered particle burst settings. */
 	particles: ParticleConfig,
+	/**  Orbiting satellite bodies settings. */
 	satellites: SatelliteConfig,
+	/**  Rainbow chromatic hue cycling settings. */
 	rainbow: RainbowConfig,
+	/**  On-overlay FPS HUD counter settings. */
 	fps_counter: FpsCounterConfig,
+	/**  GPU-rendered system-cursor bypass settings (missing in older config files). */
+	gpu_cursor?: GpuCursorConfig,
 };
 
-export type EffectMode = "FourLayerGlow" | "Ribbon" | "ParticlesOnly" | "SatellitesOnly" | "Minimal";
+/**  Global rendering preset/mode selector controlling which visual subsystems are active. */
+export type EffectMode = 
+/**
+ *  Everything may draw: 4-layer ribbon, head, ripples, particles and satellites (each still
+ *  gated by its own `enabled` flag).
+ */
+"FourLayerGlow" | 
+/**  Ribbon trail and cursor head only; disables click ripples, particles, and satellites. */
+"Ribbon" | 
+/**  Click feedback only: cursor head, shockwave ripples, and particle bursts. */
+"ParticlesOnly" | 
+/**  Orbitals only: cursor head and orbiting satellites. */
+"SatellitesOnly" | 
+/**  Minimal low-profile: crisp core and inner spine layers only with cursor head. */
+"Minimal";
 
+/**  On-overlay FPS heads-up display (HUD) rendered with a 3×5 bitmap font. */
 export type FpsCounterConfig = {
+	/**  Whether the FPS counter HUD is drawn on the overlay. */
 	enabled: boolean,
+	/**
+	 *  Update interval for the HUD text in milliseconds. Frame statistics are gathered in
+	 *  500 ms windows, so values below 500 behave like 500.
+	 */
 	refresh_rate_ms: number,
+	/**  If true, aligns HUD to the right side of the screen; left otherwise. */
 	align_right: boolean,
+	/**  If true, aligns HUD to the bottom of the screen; top otherwise. */
 	align_bottom: boolean,
 };
 
@@ -75,14 +109,45 @@ export type FrameStats = {
 	instances: number,
 };
 
+/**  General application shell and system integration settings. */
 export type GeneralConfig = {
+	/**  Whether FXCursor launches automatically at operating system login. */
 	autostart: boolean,
+	/**  Whether closing the main Studio window minimizes it to the system tray. */
 	minimize_to_tray: boolean,
+	/**  Whether the Studio window starts hidden in the tray on initial launch. */
 	start_minimized: boolean,
+	/**  Global keyboard shortcut string to toggle effects on/off (e.g. "Ctrl+Shift+E"). */
 	global_hotkey: string,
+	/**  ID of the currently active preset (built-in or user preset). */
 	selected_preset: string,
 	/**  Frame-rate cap for the overlay render loop. `0` = match the display refresh rate. */
 	max_fps?: number,
+};
+
+/**
+ *  GPU-rendered system-cursor bypass: the active OS cursor shape is extracted, drawn on the
+ *  overlay with optional movement rotation and a click bounce, and the real cursor can be hidden.
+ */
+export type GpuCursorConfig = {
+	/**  Master toggle for the GPU-drawn cursor shape. */
+	enabled: boolean,
+	/**
+	 *  Replace the system arrow with an invisible cursor while the bypass is active.
+	 *  Restored automatically on disable, exit and panic.
+	 */
+	hide_system_cursor: boolean,
+	/**  Rotate the arrow to point along the direction of pointer movement (smoothed). */
+	rotate_with_movement: boolean,
+	/**
+	 *  Rotation easing time constant in 1/60 s frames (1–30): higher is smoother but lags
+	 *  further behind direction changes.
+	 */
+	rotation_smoothing: number,
+	/**  Peak click-bounce scale in percent (100 = no bounce, 150 = 1.5×). */
+	click_scale_percent: number,
+	/**  Click-bounce animation duration in milliseconds. */
+	click_scale_duration_ms: number,
 };
 
 export type GpuInfo = {
@@ -91,13 +156,27 @@ export type GpuInfo = {
 	device_type: string,
 };
 
+/**  Configuration for the velocity-elongated SDF cursor head. */
 export type HeadConfig = {
+	/**  Whether the head shape is rendered at the cursor pointer. */
 	enabled: boolean,
+	/**  Resting diameter in physical pixels. */
 	size: number,
+	/**
+	 *  Elongation along the direction of motion, in percent per unit of eased speed (Windhawk
+	 *  `squishIntensity`: `scale = min(v × 8, 200) / 15 × intensity / 100`).
+	 */
 	squish_intensity: number,
+	/**
+	 *  Percent of the remaining gap the head (position, squish and angle) closes per 1/120 s
+	 *  (1–100; 100 = locked to the pointer).
+	 */
 	squish_smoothing: number,
+	/**  RGBA color of the cursor head (straight alpha, 0.0–1.0). */
 	color: [number, number, number, number],
+	/**  If true, renders a solid filled ellipse; if false, renders an outlined ring. */
 	filled: boolean,
+	/**  Stroke thickness when `filled` is false (negative value for filled). */
 	thickness: number,
 };
 
@@ -106,13 +185,21 @@ export type ImportOutcome = {
 	repaired_paths: string[],
 };
 
+/**  Visual properties for one layer of the 4-layer master ribbon. */
 export type LayerConfig = {
+	/**  Whether this specific layer is rendered. */
 	enabled: boolean,
+	/**  RGBA start color at the head of the trail (straight alpha, 0.0–1.0). */
 	start_color: [number, number, number, number],
+	/**  RGBA end color at the tail of the trail (straight alpha, 0.0–1.0). */
 	end_color: [number, number, number, number],
+	/**  Width multiplier relative to the base trail width (e.g. 1.50 for Outer Glow, 0.15 for Inner Spine). */
 	width_factor: number,
+	/**  Opacity multiplier applied to this layer's colors (0.0–1.0). */
 	alpha_factor: number,
+	/**  Blur/feathering fraction at the head of the trail (0.0 = razor sharp, 0.5 = soft feather). */
 	start_blur: number,
+	/**  Blur/feathering fraction at the tail of the trail (0.0 = razor sharp, 0.5 = soft feather). */
 	end_blur: number,
 };
 
@@ -124,14 +211,23 @@ export type LogRecord = {
 	timestamp_ms: number,
 };
 
+/**  Click-triggered particle burst physics and rendering. */
 export type ParticleConfig = {
+	/**  Whether particle bursts are emitted on mouse clicks. */
 	enabled: boolean,
+	/**  Number of particles spawned per click event. */
 	count_per_click: number,
+	/**  Lifetime duration of each particle in milliseconds. */
 	duration_ms: number,
+	/**  Initial ejection speed in pixels per second. */
 	base_speed: number,
+	/**  Downward gravity acceleration in pixels per second squared. */
 	gravity: number,
+	/**  Velocity kept per 1/60 s (0.0–1.0; frame-rate independent via `friction^(dt×60)`). */
 	friction: number,
+	/**  Particle diameter in physical pixels. */
 	size: number,
+	/**  RGBA tint color for particles. */
 	color: [number, number, number, number],
 };
 
@@ -142,32 +238,55 @@ export type PresetInfo = {
 	config: AppConfig,
 };
 
+/**  Dynamic rainbow chromatic hue cycling. */
 export type RainbowConfig = {
+	/**  Whether rainbow color cycling replaces static layer colors. */
 	enabled: boolean,
+	/**  Hue advance in degrees per 1/60 s (frame-rate independent; 2 ≈ one cycle every 3 s). */
 	speed: number,
+	/**  HSL saturation level (0.0 = grey, 1.0 = full vibrancy). */
 	saturation: number,
+	/**  HSL lightness level (0.0 = black, 0.5 = normal, 1.0 = white). */
 	lightness: number,
 };
 
+/**  Click-triggered expanding shockwave ripple effects. */
 export type RippleConfig = {
+	/**  Whether click ripples are spawned on mouse button presses. */
 	enabled: boolean,
+	/**  Maximum expansion diameter in physical pixels before fading out. */
 	max_diameter: number,
+	/**  Lifetime duration of a ripple animation in milliseconds. */
 	duration_ms: number,
+	/**  Initial ring stroke width at expansion start. */
 	start_width: number,
+	/**  RGBA color for Left mouse button clicks. */
 	color_left: [number, number, number, number],
+	/**  RGBA color for Right mouse button clicks. */
 	color_right: [number, number, number, number],
+	/**  RGBA color for Middle (wheel) mouse button clicks. */
 	color_middle: [number, number, number, number],
 };
 
+/**  Orbiting satellite bodies around the cursor. */
 export type SatelliteConfig = {
+	/**  Whether orbiting satellites are active. */
 	enabled: boolean,
+	/**  Number of satellite bodies in the orbit. */
 	count: number,
+	/**  Diameter of the circular orbit in physical pixels. */
 	orbit_diameter: number,
+	/**  Diameter of each satellite body in physical pixels. */
 	size: number,
+	/**  Orbit revolution speed in radians per second. */
 	speed: number,
+	/**  If true, spawns a second counter-rotating ring of satellites. */
 	dual_ring: boolean,
+	/**  Whether a faint circular orbit trajectory line is drawn. */
 	show_orbit_ring: boolean,
+	/**  Stroke width of the orbit trajectory ring. */
 	orbit_ring_thickness: number,
+	/**  RGBA color of the satellite bodies. */
 	color: [number, number, number, number],
 };
 
@@ -194,26 +313,70 @@ export type SystemDiagnostics = {
 	display_refresh_hz: number,
 };
 
+/**  Physics, geometry, and layer parameters governing the cursor ribbon trail. */
 export type TrailConfig = {
+	/**  Master toggle for ribbon trail physics and rendering. */
 	enabled: boolean,
-	length: number,
-	spring: number,
-	damping: number,
-	head_spring: number,
-	head_damping: number,
 	/**
-	 *  Number of leading nodes (including the head) that follow without overshoot; the rest of
-	 *  the chain is spring-driven and may whip. Keeps the ribbon clean right at the pointer.
+	 *  Number of simulated discrete nodes in the spring chain (4–150). Width, fade and blur
+	 *  are parameterised by node index, so this is also the length of the visible taper.
 	 */
-	lead_nodes?: number,
+	length: number,
+	/**
+	 *  Spring constant for the trailing body nodes, Windhawk scale: `k = spring / 1000` per
+	 *  1/120 s reference frame (1–500).
+	 */
+	spring: number,
+	/**
+	 *  Velocity friction percent for the body nodes (0–99): each reference frame keeps
+	 *  `1 − damping/100` of the velocity.
+	 */
+	damping: number,
+	/**  Spring stiffness constant for the leading head node (same scale as `spring`: /1000). */
+	head_spring: number,
+	/**  Velocity friction percent for the leading head node (0–99; higher = more damping). */
+	head_damping: number,
+	/**  LazyBrush: engage the TD-style dead-zone pointer smoother. */
+	lazy_enabled?: boolean,
+	/**  Dead-zone radius in px the pointer must exceed before the brush starts moving. */
+	lazy_radius?: number,
+	/**
+	 *  Brush friction 0–0.99: fraction of the excess distance NOT applied per frame
+	 *  (0 = snap to pointer, →1 = frozen). TD formula: factor = 1 - sqrt(1-(1-f)^2).
+	 */
+	lazy_friction?: number,
+	/**
+	 *  Reference ribbon width in physical pixels at the head; each layer scales it by its
+	 *  `width_factor`.
+	 */
 	cursor_size: number,
+	/**  Minimum clamping width in physical pixels at the tail of the trail. */
 	min_width: number,
+	/**
+	 *  Extra width at full speed: `width × (1 + mult × min(speed / 20, 1))`, speed in px per
+	 *  1/120 s (saturates at 2400 px/s, as in Windhawk).
+	 */
 	velocity_width_mult: number,
+	/**  Extra opacity at full speed, same normalisation as `velocity_width_mult`. */
 	velocity_alpha_mult: number,
+	/**
+	 *  Fixed Catmull-Rom sub-samples per node segment. Only used when `adaptive_quality` is
+	 *  off; the adaptive path picks its own count from the local curvature.
+	 */
 	interpolation_steps: number,
+	/**
+	 *  Falloff curve along the length of the trail
+	 *  (0=Linear, 1=EaseOut, 2=Exponential, 3=Sigmoid, 4=Smoothstep).
+	 */
 	fade_mode: number,
+	/**  Whether gradient interpolation between start and end color is applied. */
 	enable_gradient: boolean,
+	/**
+	 *  Curvature-adaptive spline sampling (3–24 px spacing): dense in bends, sparse on straight
+	 *  runs. Overrides `interpolation_steps`.
+	 */
 	adaptive_quality: boolean,
+	/**  4-Layer Master Design: [0]=Outer Glow, [1]=Mid Shadow, [2]=Crisp Core, [3]=Inner Spine. */
 	layers: [LayerConfig, LayerConfig, LayerConfig, LayerConfig],
 };
 

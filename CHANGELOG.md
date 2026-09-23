@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] - 2026-09-23 (session 11: full audit)
+
+### Fixed — trail (compared line by line with Windhawk D3D/GDI+, V3 and TD)
+
+- **Taper by node index, not arc length**: every legacy build computes `progress = (i + t)/(N − 1)`. Arc length (session 9) kept the trail at full length after a stop, then collapsed it from the far end, and made width/alpha "breathe" whenever the total length changed. The index is now carried through the near-duplicate merge, which fixes the original post-merge distortion without changing the parameterisation.
+- **Resting dot**: a collapsed chain drew nothing, so the ribbon popped in and out depending on whether nodes had merged when the loop parked; it now draws Windhawk's 4-layer dot.
+- **Velocity boost `/20`** again (session 10's `/10` was based on a wrong unit assumption; legacy uses `/20` in the same 1/120 s units) — the trail no longer looks fat and pulsing at normal speeds.
+- **Jump at the start of every movement**: the first frame after an idle park integrated the whole park (up to 100 ms) toward the new pointer.
+- **Periodic stutter**: `Mailbox` + sleep pacing drifted against vblank; now `Fifo`, latency 1, next frame acquired before the pointer is sampled.
+- **Stalls while using the Studio**: a per-frame `window.inner_size()` blocked the render thread on the Tauri main thread.
+- **Edge jitter**: the hook's unclipped coordinates alternated with `GetCursorPos`; position now comes from the poll only.
+- Rest detection waits for the head to reach the pointer and the LazyBrush to settle; per-vertex blur; NaN guard; fade mode 4 (Smoothstep) implemented.
+- **Squishy head**: velocity in px per reference frame (px/s saturated the squish on any motion), eased position and exponential smoothing as in Windhawk.
+
+### Fixed — app
+
+- GPU cursor texture lacked `TEXTURE_BINDING` (enabling the feature panicked the render thread); hidden arrow extraction, pointer visibility, per-handle cache, exit-race latch.
+- Non-sRGB surface (glow edges were over-bright), adapter limits (desktops > 8192 px panicked), opaque-surface guard, present mode from caps, capture depth-buffer cache.
+- `AppConfig::sanitize()` on load and on every replace; autosave flushed on exit; async IPC commands; autostart state cached; non-Windows button mapping.
+- Presets that masked their own effects through `effect_mode`; TS preset list generated from Rust.
+- Studio: echo suppression by content, hotkey commit on Enter/blur, preview click buttons, accessibility names, `%` display, labels, safe console serialisation, benchmark/reset error paths.
+- `update-deps`: no downgrades, no `bun update --latest`, all manifests and dependency tables, anchored regexes, failures abort, tests run.
+
+### Added
+
+- `src/lib/trail.ts` + `test/trail-parity.test.ts` against `test/fixtures/trail_trace.json` (Rust `dump_trail_trace`); `dump_presets` → `src/lib/generated/builtin_presets.json`; GPU smoke test; preset-mode, sanitize, flush, retract, resting-dot, squish tests. `bun run typecheck` covers `test/` and `scripts/`.
+
+## [Unreleased] - 2026-09-22
+
+### Fixed
+
+- **Trail speed / "accelerating on flicks" (session 10)**: three root causes found by re-reading Windhawk + V3:
+  1. `REFERENCE_FRAME` was `1/60` but Windhawk `kReferenceFrameTime` and V3 both use **`1/120`** — every spring impulse per second was halved and friction softened, so the ribbon lagged far behind legacy and felt slow.
+  2. The distance clamp was **64 px**, *below* the chain's natural steady-state gap during normal fast motion (`gap ≈ V×(1−f)/(k×f) ≈ 8.6×` px/step). It fired every frame of motion and injected `delta/dt_scale` into velocity (TD does this at fixed 60 Hz; re-applied every sub-step it slingshots followers). Clamp is now **512 px, teleport-guard only, and inelastic** (strips separating velocity only — never adds the correction to `vx`).
+  3. Velocity-width normalisation rescaled for the 1/120 units (`speed/10` instead of `/20`) so width/alpha boost keeps its physical threshold.
+- **Trail-only defaults**: `effect_mode: Ribbon`; `head` / `ripple` / `particles` default `enabled: false` (satellites/rainbow/fps/gpu_cursor already off). Matches V3 factory defaults. Existing `config.json` keeps its stored flags — use **Reset Defaults** once to pick these up. Built-in presets still enable their own effects explicitly (TS mirror updated to match).
+
+### Added
+
+- Regression tests: `fast_flick_does_not_slingshot_past_a_stopped_pointer`, `sustained_fast_motion_never_engages_the_distance_clamp`.
+
 ## [Unreleased] - 2026-09-17
 
 ### Fixed
@@ -22,6 +63,8 @@
 
 ### Added
 
+- **Trail physics rewrite + LazyBrush** (session 9): replaced the overcomplicated first-order pursuit chain (head EMA → `follow_step` → 4 `lead_nodes` → walls/`block_overtake`) with the proven legacy formulation — optional **LazyBrush** dead-zone pointer filter (`lazy_enabled`/`lazy_radius`/`lazy_friction`, TD-style `1-√(1-(1-f)²)` friction), a **Windhawk spring-damper** head and body (0.3 second-neighbour coupling, exponential friction, existing 50/30 defaults), and a **clamped 64 px distance constraint** with velocity correction that bounds overshoot on flicks/teleports. `Sample.progress` is now **arc-length** (was segment-index), fixing uneven width/fade/blur taper near merged nodes and adaptive samples. WGSL depth tiebreaker inverted so the **head wins coverage ties** at folds (was `seg × 1e-6`, which favoured the tail). `lead_nodes` removed from config/presets/UI; `lazy_*` fields added with serde defaults (self-healing). The ribbon **no longer prepends the raw pointer** ahead of the spring head (legacy builds samples from the chain only — the prepend had stretched a full-width capsule across the spring lag and produced a head blob). Renderer tests rewritten (bounded overshoot, LazyBrush dead-zone, constraint clamp, arc-progress); LivePreview mirrors the new chain. Capsule-union depth/stencil pass unchanged (judged sound).
+- **GPU Cursor Bypass** (`gpu_cursor`): the active OS cursor shape is extracted on Windows (`GetCursorInfo` → `GetIconInfo` → `GetDIBits`, premultiplied RGBA8, per-handle cache), drawn as an on-top textured quad on the overlay with smoothed movement rotation (arrow only), a sine-bump click bounce, and an optional global arrow hide via `SetSystemCursor` — restored on disable, Tauri exit and panic. Config struct + Studio section in the Head tab; renderer pipeline in `crates/fxcursor-render` (`vs_cursor`/`fs_cursor`, group-1 texture bind); extraction backend in `src-tauri/src/cursor.rs` (no-op stubs elsewhere).
 - **Dev Console Debug Filter**: added `debug` level button to log filters in `src/components/Tabs/DevConsoleTab.tsx`.
 - **Full In-Window Shortcut Navigation**: added `Ctrl + /` (and `Ctrl + ?`) shortcut in `src/App.tsx` for immediate navigation to the About tab, and documented all 11 tab shortcuts in `src/components/Tabs/HotkeysTab.tsx`.
 - **W3C ARIA Accessibility**: added `role="tablist"`, `role="tab"`, `aria-selected`, and `aria-label` attributes to the Studio tab bar and master effect toggle switch in `src/App.tsx`.

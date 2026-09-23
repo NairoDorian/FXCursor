@@ -43,33 +43,30 @@ export function subscribeLogs(listener: LogListener): () => void {
   };
 }
 
+/**
+ * Renders one console argument for the Dev Console. Never throws: a logging call must not break
+ * its caller (plain `JSON.stringify` threw on circular objects and printed `Error`s as "{}").
+ */
+export function formatLogArg(arg: unknown): string {
+  if (arg instanceof Error) return arg.stack ?? `${arg.name}: ${arg.message}`;
+  if (typeof arg !== 'object' || arg === null) return String(arg);
+  try {
+    return JSON.stringify(arg) ?? String(arg);
+  } catch {
+    return Object.prototype.toString.call(arg); // circular or otherwise unserialisable
+  }
+}
+
 // Intercept browser console methods
 if (typeof window !== 'undefined') {
-  const origLog = console.log;
-  const origWarn = console.warn;
-  const origError = console.error;
-
-  console.log = (...args: any[]) => {
-    origLog(...args);
-    pushLog(
-      'info',
-      args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
-    );
-  };
-  console.warn = (...args: any[]) => {
-    origWarn(...args);
-    pushLog(
-      'warn',
-      args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
-    );
-  };
-  console.error = (...args: any[]) => {
-    origError(...args);
-    pushLog(
-      'error',
-      args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
-    );
-  };
+  const wrap = (level: LogLevel, original: (...args: unknown[]) => void) =>
+    (...args: unknown[]) => {
+      original(...args);
+      pushLog(level, args.map(formatLogArg).join(' '));
+    };
+  console.log = wrap('info', console.log.bind(console));
+  console.warn = wrap('warn', console.warn.bind(console));
+  console.error = wrap('error', console.error.bind(console));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -97,7 +94,9 @@ export function attachBackendLogs() {
       ? raw
       : 'info';
 
-  const shortTarget = (target: string) => target.replace(/^fxcursor_lib::?/, 'rust::');
+  // Every record on this stream is from the backend: tag all of them "rust" (fxcursor_render,
+  // wgpu_*, tauri targets included), shortening the app crate's own prefix.
+  const shortTarget = (target: string) => `rust::${target.replace(/^fxcursor_lib(::)?/, '')}`;
 
   void (async () => {
     try {

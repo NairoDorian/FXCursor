@@ -3,6 +3,7 @@
 
 pub mod config;
 pub mod presets;
+pub mod sanitize;
 pub mod self_healing;
 
 pub use config::*;
@@ -18,5 +19,13 @@ mod tests {
         let cfg = AppConfig::default();
         assert!(cfg.enabled);
         assert_eq!(cfg.trail.length, 80);
+        // Out of the box only the ribbon trail is active (legacy V3 parity).
+        assert!(cfg.trail.enabled);
+        assert_eq!(cfg.effect_mode, EffectMode::Ribbon);
+        assert!(!cfg.head.enabled);
+        assert!(!cfg.ripple.enabled);
+        assert!(!cfg.particles.enabled);
+        assert!(!cfg.satellites.enabled);
+        assert!(!cfg.rainbow.enabled);
     }
 }

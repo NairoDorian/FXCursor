@@ -32,7 +32,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
         title="Orbit Satellites (Celestial Bodies)"
         desc="SDF celestial orbs rotating smoothly around the mouse pointer"
         headerRight={
-          <Toggle checked={props.satellites.enabled} onChange={(v) => update({ enabled: v })} />
+          <Toggle ariaLabel="Enable satellites" checked={props.satellites.enabled} onChange={(v) => update({ enabled: v })} />
         }
       >
         <ColorPicker
@@ -89,6 +89,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           <label class="switch">
             <input
               type="checkbox"
+              aria-label="Mirrored Dual-Ring Orbit"
               checked={props.satellites.dual_ring}
               onChange={(e) => update({ dual_ring: e.currentTarget.checked })}
             />
@@ -104,6 +105,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           <label class="switch">
             <input
               type="checkbox"
+              aria-label="Show Orbit Track Ring"
               checked={props.satellites.show_orbit_ring}
               onChange={(e) => update({ show_orbit_ring: e.currentTarget.checked })}
             />

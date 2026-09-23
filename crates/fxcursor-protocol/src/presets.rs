@@ -35,7 +35,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
                     damping: 28.0,
                     head_spring: 60.0,
                     head_damping: 28.0,
-                    lead_nodes: 4,
+                    lazy_enabled: false,
+                    lazy_radius: 30.0,
+                    lazy_friction: 0.4,
                     cursor_size: 44.0,
                     min_width: 2.0,
                     velocity_width_mult: 0.6,
@@ -124,7 +126,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
             description: "Ultra-thin, zero-blur high-precision centerline needle for esports and minimalists".to_string(),
             config: AppConfig {
                 enabled: true,
-                effect_mode: EffectMode::Minimal,
+                // FourLayerGlow: the mode mask must not hide what the preset configures (its
+                // shadow layer and ripples); the per-layer `enabled` flags drop the glow.
+                effect_mode: EffectMode::FourLayerGlow,
                 trail: TrailConfig {
                     enabled: true,
                     length: 50,
@@ -132,7 +136,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
                     damping: 35.0,
                     head_spring: 80.0,
                     head_damping: 35.0,
-                    lead_nodes: 4,
+                    lazy_enabled: false,
+                    lazy_radius: 30.0,
+                    lazy_friction: 0.4,
                     cursor_size: 28.0,
                     min_width: 1.5,
                     velocity_width_mult: 0.3,
@@ -210,7 +216,8 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
             description: "Glowing solar core with 4 revolving celestial satellites and gentle lunar ripples".to_string(),
             config: AppConfig {
                 enabled: true,
-                effect_mode: EffectMode::SatellitesOnly,
+                // FourLayerGlow: SatellitesOnly hid the trail and ripples this preset configures.
+                effect_mode: EffectMode::FourLayerGlow,
                 trail: TrailConfig {
                     enabled: true,
                     length: 70,
@@ -218,7 +225,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
                     damping: 32.0,
                     head_spring: 45.0,
                     head_damping: 32.0,
-                    lead_nodes: 4,
+                    lazy_enabled: false,
+                    lazy_radius: 30.0,
+                    lazy_friction: 0.4,
                     cursor_size: 36.0,
                     min_width: 2.0,
                     velocity_width_mult: 0.4,
@@ -317,7 +326,8 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
             description: "Blazing ember trail with dynamic gravity sparks and explosive shockwave bursts".to_string(),
             config: AppConfig {
                 enabled: true,
-                effect_mode: EffectMode::ParticlesOnly,
+                // FourLayerGlow: ParticlesOnly hid the "blazing ember trail" itself.
+                effect_mode: EffectMode::FourLayerGlow,
                 trail: TrailConfig {
                     enabled: true,
                     length: 85,
@@ -325,7 +335,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
                     damping: 25.0,
                     head_spring: 55.0,
                     head_damping: 25.0,
-                    lead_nodes: 4,
+                    lazy_enabled: false,
+                    lazy_radius: 30.0,
+                    lazy_friction: 0.4,
                     cursor_size: 42.0,
                     min_width: 2.0,
                     velocity_width_mult: 0.7,
@@ -422,7 +434,9 @@ pub fn get_builtin_presets() -> Vec<PresetInfo> {
                     damping: 30.0,
                     head_spring: 50.0,
                     head_damping: 30.0,
-                    lead_nodes: 4,
+                    lazy_enabled: false,
+                    lazy_radius: 30.0,
+                    lazy_friction: 0.4,
                     cursor_size: 40.0,
                     min_width: 2.0,
                     velocity_width_mult: 0.5,

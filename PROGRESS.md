@@ -2,7 +2,7 @@
 
 > **Milestone Status**: 🟡 Under construction — Tauri single-process path works end to end on Windows; V4 "micro-daemon" architecture is a prototype with stabilized IPC. Repository restructured and renamed **FXCursor** (app at the root, V3 under `legacy/`).
 > **Version**: `0.5.0` (pre-release)
-> **Last audit**: 2026-09-17, session 7 (comprehensive 3-wave full review, audit & deep hardening; resolved daemon IPC deadlock, Win32 hook cleanup, atomic saves for configs/presets, tray icon safety, fast PNG bursts, depth surface clamping, ARIA tab accessibility, doc comments across crates, 52 passed Cargo tests + 17 Bun tests, and complete markdown sync)
+> **Last audit**: 2026-09-23, session 11 (full audit: trail brought back to the legacy algorithm — node-index taper, resting dot, `/20` speed normalisation, Windhawk squishy head; vsync-locked Fifo pacing; GPU-cursor P0 fixed; config range validation; Rust → TS trail/preset parity fixtures; 78 Cargo tests + 27 Bun tests; baseline `089e5d8`, nothing committed since)
 > **Tech Stack**: Tauri 2.11, Bun 1.4, SolidJS 2.0.0-rc.7, TypeScript 7.1-dev, Vite 8.3 beta, wgpu 30, windows 0.62, Rust 2024 edition (rustc 1.98.1)
 
 > [!CRITICAL]
@@ -22,7 +22,7 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 | Area           | Implemented today                                                                                                                                                                                                                                                                                                                                                | Spec target (`docs/V4_ARCHITECTURE_SPECIFICATION.md`)                          |
 | :------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------- |
 | Process model  | **Single process**: Tauri shell + overlay webview window + `gpu-render-thread` with a wgpu 30 surface on that window                                                                                                                                                                                                                                             | Headless `fxcursor-daemon` (< 12 MB) + transient Studio UI over named-pipe IPC |
-| Physics        | **CPU** `TrailChain`: pointer-smoothing head follower + `lead_nodes` pursuit followers + spring-damper body (2nd-order neighbour term), fixed 1/120 s sub-steps (frame deltas up to 100 ms integrated in full), **no-overtake rule** (no node crosses in front of its predecessor / the pointer), centripetal Catmull-Rom with phantom endpoints and curvature-adaptive sampling                                                                                                                                                                                          | WGSL compute pass at 240 Hz sub-steps                                          |
+| Physics        | **CPU** `TrailChain`: optional LazyBrush dead-zone pointer filter → Windhawk spring-damper head + body (0.3 second-neighbour coupling) on a **1/120 s reference frame** + **512 px inelastic teleport-only** clamp, integrated in equal sub-steps of at most 1/120 s; **width / fade / blur follow the original node index** (as in Windhawk, V3 and TD: the trail retracts into the cursor after a stop), a collapsed chain draws a 4-layer resting dot, velocity boost normalised by 20 px per 1/120 s; centripetal Catmull-Rom with phantom endpoints and curvature-adaptive sampling; head wins depth ties at folds. Mirrored in TypeScript by `src/lib/trail.ts` and checked against a Rust reference trace. **Defaults are trail-only** | WGSL compute pass at 240 Hz sub-steps                                          |
 | Rendering      | **GPU**: 4-layer ribbon (Outer Glow 150 %, Mid Shadow 90 %, Crisp Core 50 %, Inner Spine 15 %) as a GPU-resolved union of tapered round capsules (depth max-coverage pre-pass: round joins/caps, no folding, no double blending), fwidth anti-aliasing, pre-multiplied alpha; instanced SDF head / ripples / particles / satellites (dual counter-rotating ring) | Same visuals, compute-fed vertex buffers                                       |
 | Input          | **Windows: `WH_MOUSE_LL` low-level hook** on a message thread feeding an `InputHub` (position, buttons, queued clicks) with condvar wake; `GetCursorPos` fallback for UIPI. Other platforms: `device_query` polling into the same hub                                                                                                                            | Win32 Raw Input + kernel wait, CGEventTap, evdev                               |
 | Idle behaviour | Render thread **parks on a condvar** (100 ms bounded) once 3 settle frames are presented; woken by hook events or config commits. No GPU work while idle                                                                                                                                                                                                         | 0.00 % CPU/GPU kernel sleep                                                    |
@@ -34,7 +34,8 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 | Daemon crate   | `crates/fxcursor-daemon`: Windows-only winit prototype, JSON named-pipe / Unix-socket server, **no client, not launched by the app**, `physics.wgsl` present but never dispatched                                                                                                                                                                                | Production headless renderer                                                   |
 | Type sharing   | **`tauri-specta` generates `src/lib/bindings.ts`** (typed `commands` + config types) on every debug run; a Rust ⇄ TS default-config parity test guards the TS defaults mirror                                                                                                                                                                                    | Auto-generated `bindings.ts` ✅                                                |
 | Effect modes   | `effect_mode` implemented as a `ModeMask` in the shared renderer (Full, Ribbon only, Click effects only, Satellites only, Minimal core+spine); selector in the Studio header; live preview mirrors it                                                                                                                                                            | —                                                                              |
-| Telemetry      | `fps_counter` drives Developer Hub polling of `FrameStats` (fps, CPU ms/frame, state, vertex/instance counts) published by the render thread every 500 ms                                                                                                                                                                                                        | On-overlay HUD text (future)                                                   |
+| Telemetry      | `fps_counter` drives Developer Hub polling of `FrameStats` (fps, CPU ms/frame, state, vertex/instance counts) published by the render thread every 500 ms; the overlay HUD draws it with a 3×5 bitmap font, anchored by `align_right` / `align_bottom`                                                                                                                                                                             | On-overlay HUD text (future)                                                   |
+| GPU cursor     | `gpu_cursor` bypass (Windows): active OS cursor shape extracted per handle, drawn last as an on-top textured quad with smoothed movement rotation (arrow only) + sine-bump click bounce; optional global arrow hide via `SetSystemCursor`, restored on disable / exit / panic. Head-tab Studio section                                                                                                                                                                                              | —                                                                              |
 | Render crate   | **`crates/fxcursor-render`** holds the one renderer + shaders; both `src-tauri` and the daemon depend on it (the daemon fork is gone)                                                                                                                                                                                                                            | Same                                                                           |
 
 ---
@@ -43,7 +44,7 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 
 ### 2.1 Graphics core (`src-tauri/src/overlay/`)
 
-- [x] wgpu 30 surface on the Tauri overlay window (`SurfaceTargetUnsafe::from_display_and_window`), pre-multiplied alpha compositing, Mailbox presentation, surface loss recovery.
+- [x] wgpu 30 surface on the Tauri overlay window (`SurfaceTargetUnsafe::from_display_and_window`), pre-multiplied alpha compositing, vsync-locked `Fifo` presentation (`Mailbox` only for a cap above the refresh rate, since session 11), surface loss recovery.
 - [x] 4-layer master ribbon with per-layer width/alpha/blur, gradient and fade curves (linear / ease-out / exponential / sigmoid), velocity-driven width and alpha.
 - [x] Capsule-union ribbon: one tapered round capsule per sample pair, union resolved with a depth max-coverage pre-pass (replaced the quad strip + normal flip + 16-step caps on 2026-09-09).
 - [x] SDF effects: squishy head (velocity-elongated ellipse), click ripples per mouse button, kinematic particle bursts (gravity, friction), orbit satellites with optional ring and counter-rotating dual ring.
@@ -112,11 +113,11 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 - [x] Render loop paces to the display refresh rate or `general.max_fps` (new setting, Performance card in Hotkeys & Tray); display bounds polled every second and the surface refitted on change.
 - [x] Curvature-adaptive spline sampling (3–24 px spacing) and capsule culling (invisible / off-screen): ~500 capsules instead of ~1400 for a full trail.
 - [x] Strict CSP (`csp` + `devCsp`) with a logged Studio handshake; hotkey status line (registered / disabled / error) in the Hotkeys tab; MODIFIED badge on presets; daemon pipe double-close fixed.
-- [x] Physics integrated in fixed 1/120 s sub-steps; particle bursts spawn at evenly spaced angles with ±0.25 rad jitter and 0.7–1.3× speed (D3D_CURSOR-style).
+- [x] Physics integrated in equal sub-steps of at most 1/120 s; particle bursts spawn at evenly spaced angles with ±0.25 rad jitter and 0.7–1.3× speed (D3D_CURSOR-style).
 
 ### 2.9 Trail head physics, burst snapshots & the FXCursor rename (2026-09-09, session 6)
 
-- [x] **`TrailChain`** (GPU-free, unit-tested): the head is a first-order follower of the jitter-filtered pointer; the first `trail.lead_nodes` nodes (default 4, slider in Trail Physics) are pursuit followers that cannot whip; the rest is the spring-damper chain. A **no-overtake rule** stops any node from crossing in front of its predecessor (the raw pointer for the head): the loops and stubs that appeared around the cursor at stops and reversals are gone. Frame deltas up to 100 ms are integrated in full (16 sub-steps) so hitches do not detach the trail.
+- [x] **`TrailChain`** (superseded by the session-9 rewrite below; kept for history): the head was a first-order follower of the jitter-filtered pointer with `trail.lead_nodes` pursuit followers and a **no-overtake rule**. Replaced in session 9 by LazyBrush + spring-damper + distance constraint.
 - [x] Centripetal Catmull-Rom (α = 0.5) with phantom endpoints replaces the uniform spline: no hooks with uneven node spacing.
 - [x] Tests: stop (nothing ever in front of the pointer), reversal (passed nodes stay behind), lead-node monotonicity, frame-rate independence (60 vs 240 fps), chain growth, wall clamping. 18 render-crate tests.
 - [x] **Burst snapshots**: `--capture-burst N --capture-interval ms` writes `<stem>_NN.png` at a fixed cadence; PNG encoding runs on a worker thread so the capture no longer stalls the physics it records; each capture logs a one-line chain summary (`chain nodes=… first5=… farthest=…`).
@@ -139,18 +140,65 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 - [x] **Named Capture Worker Threads**: Assigned explicit thread identifier `"capture-png-worker"` in `src-tauri/src/overlay/mod.rs` for enhanced observability.
 - [x] **Exhaustive Code Comments**: Documented all `AppConfig` and subsystem structs in `fxcursor-protocol`, `OverlayRenderer` architecture in `fxcursor-render`, and daemon state in `fxcursor-daemon`.
 
+### 2.11 GPU cursor bypass (2026-09-22, session 8)
+
+- [x] **Protocol**: new `GpuCursorConfig` (`enabled`, `hide_system_cursor`, `rotate_with_movement`, `rotation_smoothing`, `click_scale_percent`, `click_scale_duration_ms`) on `AppConfig` with `#[serde(default)]`; TS mirror in `presets.ts`, `bindings.ts` type, fixture regenerated; parity tests green.
+- [x] **Renderer** (`crates/fxcursor-render/src/cursor.rs` + pipeline in `renderer.rs` / `render.wgsl`): `CursorShape` snapshots (premultiplied top-down RGBA8), pure `cursor_quad_vertices` (hotspot-pinned quad, unit-tested), `GpuCursorState` with exponential direction smoothing + short-arc rotation easing (rest = upright) and a sine-bump click bounce; `vs_cursor`/`fs_cursor` textured-quad pipeline in shader group 1, drawn last with premultiplied blend; `is_animating` includes rotation/bounce so the loop never parks mid-animation.
+- [x] **Win32 backend** (`src-tauri/src/cursor.rs`): `GetCursorInfo` → `GetIconInfo` → `GetDIBits` extraction (colour DIB + AND-mask alpha fallback, monochrome AND/XOR cursors), per-handle cache, invisible-cursor read-through while hidden; hide/restore via `CopyIcon` + `SetSystemCursor(OCR_NORMAL)` with `SPI_SETCURSORS` fallback; idempotent `force_restore` on Tauri `RunEvent::Exit*` and in the panic hook. Non-Windows: no-op stubs (extract = `None`, never hides).
+- [x] **Render-loop wiring** (`overlay/mod.rs` 3a): extracts/uploads each pass (parked loop included), forces settle frames on shape change, mirrors hide state from config; feature-off drops the shape and restores the arrow.
+- [x] **Studio**: "GPU Cursor Bypass" `SectionCard` in the Head tab (master toggle, hide-system, rotate, smoothing/bounce sliders) wired through `App.tsx`.
+- [x] Tests: 5 pure-function tests in the render crate (`cursor_quad_vertices` pinning/axis alignment, bounce envelope, eastward rotation tracking + rest return, angle wrapping) + extraction/restore smoke tests in `src-tauri` → workspace total **60**.
+
+### 2.12 Trail physics rewrite + LazyBrush (2026-09-22, session 9)
+
+- [x] **Root causes fixed**: lag was a cascade of ~6 serial first-order filters (head EMA → `follow_step` → 4 `lead_nodes`); jitter was `block_overtake` wall stick-slip + `cursor_dir` threshold; width taper was segment-index `progress` distorted by near-coincident merges; 90° folds favouring the tail was the WGSL `seg × 1e-6` depth tiebreaker.
+- [x] **`TrailChain` rewrite** (`crates/fxcursor-render/src/renderer.rs`): optional **LazyBrush** dead-zone on the pointer (TD formula `factor = 1-√(1-(1-f)²)`, 0.1 px quantised excess, dt-scaled) → head is a **Windhawk spring-damper** toward the brush (`v += gap×k×dt_scale; v *= fric; p += v×dt_scale`) → body chain with 0.3 second-neighbour coupling → **clamped 64 px distance constraint** with velocity correction. Removed: walls/`block_overtake`, `cursor_dir`, `follow_step`, `lead_nodes` pursuit, `TrailNode.dir`. Kept: 1/120 s sub-steps (≤16), exponential friction (`powf(dt_scale)`).
+- [x] **Config**: `lead_nodes` removed; `lazy_enabled` (default false), `lazy_radius` (30 px), `lazy_friction` (0.4) added with `#[serde(default)]` — old configs self-heal. Presets ×5, `presets.ts`, `bindings.ts`, fixture, parity green.
+- [x] ~~**Arc-length `build_samples`**~~ — **reverted in session 11**: every legacy build parameterises by node index; arc length kept the trail at full length after a stop and made it "breathe". The real bug was the *post-merge* index, now fixed by carrying the original node index through merges.
+- [x] **WGSL tiebreaker**: head-favouring saturating bias `1e-3/(1+seg)` replaces `seg × 1e-6` — at folds the head wins coverage ties; stencil paint-once and 1e-4 colour epsilon unchanged. Capsule-union depth pass otherwise untouched (judged sound).
+- [x] **Studio**: "Lazy Brush" section (toggle + radius + friction sliders) in Trail tab; Head Kinematics relabelled (Spring Strength 10–300, Friction 0–99); Lead Nodes slider removed.
+- [x] **LivePreview** mirrors the new chain (LazyBrush → spring-damper → constraint). Since session 11 it runs the shared `src/lib/trail.ts`.
+- [x] **Head blob fix**: the ribbon no longer prepends the raw pointer ahead of the spring head — `build_ribbon` and LivePreview sample from `chain.nodes` only (legacy Windhawk/V3/TD). The old prepend stretched a full-width capsule across the spring lag and produced a visible blob at the head.
+- [x] Tests: wall/overtake/lead/reversal tests replaced by bounded-overshoot settle, LazyBrush dead-zone hold-then-drag, distance-constraint clamp (2000 px teleport), arc-vs-index progress; growth + frame-rate independence kept → workspace total still **60**.
+
+### 2.13 Trail speed & flick-acceleration fix + trail-only defaults (2026-09-22, session 10)
+
+- [x] **`REFERENCE_FRAME` 1/60 → 1/120**: Windhawk `kReferenceFrameTime` and V3 both use 1/120; the 1/60 value halved spring impulses per second and softened `powf` friction — the trail lagged legacy and felt slow. Velocity-width normalisation rescaled (`speed/10`) for the new units — **reverted to `/20` in session 11**: Windhawk, GDI+ and V3 all use `/20` in these same 1/120 s units.
+- [x] **Distance clamp**: was 64 px — *below* the natural steady-state gap at speed, so it fought the springs every frame and injected velocity via `delta/dt_scale` (reads as accelerating on sudden flicks). Now **512 px, teleport-guard only, inelastic** (strips separating `v_n`, never adds the correction into `vx`). LivePreview mirrors this.
+- [x] **Trail-only defaults**: `effect_mode: Ribbon`; `head` / `ripple` / `particles` default off (V3 parity). Built-in presets keep their own explicit flags; TS preset mirror updated so neon/razor/celestial/firestorm/rainbow still enable what Rust enables. Existing user `config.json` needs one **Reset Defaults** to pick this up.
+- [x] Tests: +2 (`fast_flick_does_not_slingshot_past_a_stopped_pointer`, `sustained_fast_motion_never_engages_the_distance_clamp`) → workspace **62**; frame-rate tolerance 12→20 px (sub-step residual).
+
+### 2.14 Full audit: legacy-faithful trail, pacing, GPU/IPC hardening, parity fixtures (2026-09-23, session 11)
+
+Three read-only audits (Tauri backend, frontend + tooling, legacy Windhawk D3D/GDI+ / V3 / TD trail pipelines vs V4) followed by fixes.
+
+- [x] **Trail shape = legacy**: `build_samples` progress is `(i + t)/(N − 1)` on the *original* node index (carried through the near-duplicate merge); a collapsed chain emits one zero-length capsule per layer (the resting dot Windhawk draws — it used to pop in and out); velocity boost `min(speed/20, 1)`; blur interpolated per vertex (`params.w`); `is_moving` also requires the head to reach the brush (0.1 px) and the LazyBrush to settle; non-finite chains reset on the pointer; `interpolation_steps` bounded 1–32; fade mode 4 (Smoothstep) implemented (the UI offered it, the renderer fell back to linear).
+- [x] **Squishy head = Windhawk `UpdateSquishyCursor`**: eased position, exponential `1 − (1 − s)^dt_scale` smoothing, velocity in px per reference frame (px/s saturated `min(v × 8, 200)` at ~25 px/s: the head sat fully squashed on any motion).
+- [x] **Pacing**: `Fifo` + `desired_maximum_frame_latency: 1`; while uncapped the next backbuffer is acquired *before* the pointer is sampled, so the loop is phase-locked to vblank (sleep pacing at the refresh period drifted and repeated a frame every ~20 frames at 144 Hz). The first frame after an idle park integrates one period, not the whole park (up to 100 ms of spring toward a pointer that just moved). Failed acquisitions back off instead of spinning. Present mode chosen from the surface caps; refresh rate re-read every second.
+- [x] **No main-thread stalls**: the per-frame `window.inner_size()` (a blocking round-trip to the Tauri main thread) moved to the 1 s display poll, which also refits on DPI-driven window moves; heavy IPC commands are `async`; autostart state cached (was a registry read on every slider tick).
+- [x] **Input**: `GetCursorPos` is the only position source on Windows (as in all legacy builds); the hook only wakes the loop and records clicks (its `pt` is unclipped at screen edges and alternated with the poll). Non-Windows button mapping fixed (`device_query` is 1-based; X11 order differs).
+- [x] **GPU surface**: non-sRGB `Bgra8Unorm` target like Windhawk (sRGB encoding made pre-multiplied glow edges over-bright in DWM); adapter limits instead of the 8192 px default (3×4K desktops panicked), surface clamped to the device limit; an opaque-only surface aborts instead of blacking out the desktop; `WGPU_*` backend overrides honoured.
+- [x] **GPU cursor**: texture created with `TEXTURE_BINDING` (enabling the feature panicked the render thread); hidden-arrow extraction reads the saved original (`SetSystemCursor` replaces the stock arrow's contents, so the old identity check never matched and the I-beam stuck); pointer visibility mirrored (fullscreen video, typing); per-handle shape cache (`Arc`, no per-frame pixel copy) invalidated every second; restore latched on exit so a late frame cannot hide the arrow again.
+- [x] **Config**: `AppConfig::sanitize()` clamps every numeric field and replaces NaN/∞ on load and in `replace_config` (IPC, `--apply`, presets, import); autosave flushed on exit.
+- [x] **Presets**: `particle_firestorm` / `celestial_orbit` / `razor_spine` no longer mask their own trail / ripples / shadow layer through `effect_mode` (regression test `preset_modes.rs`); the TS preset list is generated from Rust (`src/lib/generated/builtin_presets.json`) — the hand-written copy had drifted in 5 of 6 presets (false "MODIFIED").
+- [x] **Parity & tests**: `src/lib/trail.ts` (TrailChain, samples, styles, squishy head) replays `test/fixtures/trail_trace.json` from the Rust `dump_trail_trace` example (4 runs incl. 144 Hz and LazyBrush; a 3 % change of one constant fails it); headless GPU smoke test renders every pipeline incl. the cursor quad; `bun run typecheck` now also checks `test/` and `scripts/`. CI checks all four fixtures for freshness.
+- [x] **Studio**: config echoes recognised by content (a tray / hotkey toggle during a slider drag is no longer reverted), listener cleanup, hotkey committed on Enter/blur (no partial system-wide registrations), preview right/middle click colours fixed, accessible names on every switch / slider / colour input, `%` display fix, labels describe what parameters now do, safe console serialisation, benchmark / reset error paths.
+- [x] **Tooling**: `update-deps` never downgrades (stable `max_version` compared first; `bun update` without `--latest`, which moved pre-release pins back to `latest`), discovers every workspace manifest and dependency table, anchored regexes keep the version operator, aborts on any failing step, runs cargo + bun tests, `--dry-run` prints the report.
+- [x] Webview hardening moved to `src/lib/hardening.ts` (runs on every load; the one-shot Rust `eval` was lost on reload and claimed protections it did not implement).
+
 ---
 
-## 3. Verification matrix (2026-09-17)
+## 3. Verification matrix (2026-09-23)
 
 | Check              | Command                                                 | Result                                                                                                                |
 | :----------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------- |
 | TypeScript         | `bun run typecheck`                                     | ✅ 0 errors                                                                                                           |
 | Lint               | `bun run lint`                                          | ✅ clean (oxlint on 39 files, 0 warnings, 0 errors)                                                                   |
 | Vite bundle        | `bun run build`                                         | ✅ 130 kB JS / 4.3 kB CSS (0 warnings)                                                                                |
-| Bun unit tests     | `bun test`                                              | ✅ 17 passed (presets, theme, version, config parity, effect-mode parity)                                             |
+| Bun unit tests     | `bun test`                                              | ✅ 27 passed (presets, theme, version, config parity, effect-mode parity, **trail parity vs Rust trace**) |
 | Cargo workspace    | `rtk cargo check --workspace`                           | ✅ 0 errors, 0 warnings                                                                                               |
-| Cargo tests        | `rtk cargo test --workspace`                            | ✅ 52 passed (protocol 6 + parity 2, render 18 + parity 2, app 19 incl. capture/presets/CLI/panic, daemon 5)          |
+| Cargo tests        | `rtk cargo test --workspace`                            | ✅ 78 passed (render 31 incl. retract-after-stop, resting dot, index taper, squishy head; GPU smoke 1; preset modes 1; protocol 11 incl. sanitize; app 27; daemon 5; parity/mode) |
+| Live run (2026-09-23) | `bun run tauri dev` + `--capture`                  | ✅ RTX 4070 Vulkan, 165 Hz, `Bgra8Unorm` + PreMultiplied surface, 4-layer ribbon captured, no errors in the log |
 | Live run (Windows) | `bun run tauri dev`                                     | ✅ virtual desktop (−308, 0) 2560×2680 across two monitors, 240 Hz pacing, RTX 4070 (Vulkan), hook installed, config adopted from the CursorFX install, bindings regenerated |
 | Trail transients   | `scripts/snapshots/snapshot_motion.ps1` (30-frame bursts) | ✅ stop / reversal / 90° turn keep a clean rounded tip at the pointer; HUD verified with `--apply` + `--capture`     |
 | Clippy             | `cargo clippy --workspace --all-targets -- -D warnings` | ✅ clean (0 warnings)                                                                                                 |
@@ -167,13 +215,16 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 | 1   | Overlay is a **webview window** hosting a wgpu surface: extra WebView2 process and RAM. A native (`winit`/raw HWND) overlay would cut idle memory. | Medium                          | `src-tauri/src/lib.rs`, `overlay/mod.rs` |
 | 2   | Windows input is a low-level hook, but macOS/Linux still poll `device_query` (edge-only click detection, no idle park below 4 ms).                 | Medium                          | `src-tauri/src/tracker.rs`               |
 | 3   | `crates/fxcursor-daemon` still has no client and is not launched by anything (the pipe double-close is fixed); it shares the renderer crate.        | Medium                          | `crates/fxcursor-daemon/src/ipc/mod.rs`  |
-| 4   | `fps_counter.align_right` / `align_bottom` are reserved for a future on-overlay HUD and currently unused.                                          | Low                             | `crates/fxcursor-protocol/src/config.rs` |
-| 5   | `LivePreview` approximates GPU edge feathering with canvas shadows; geometry and physics otherwise match.                                          | Low                             | `src/components/Preview/LivePreview.tsx` |
+| 4   | `fps_counter.align_*` corner placement is honoured by the renderer HUD, but the Studio exposes no UI to switch corners (defaults: right/top).                          | Low                             | `src/components/Tabs/DeveloperTab.tsx` |
+| 5   | `LivePreview` approximates the GPU feather with two canvas bands; physics, sampling and styling come from `src/lib/trail.ts` (tested against Rust).  | Low                             | `src/components/Preview/LivePreview.tsx` |
 | 6   | Dev Console only streams records from `fxcursor*` targets; wgpu/tauri internals stay on stderr by design.                                          | Low                             | `src-tauri/src/logger.rs`                |
 | 7   | Toast and tab accent colours now follow the theme tokens; a few semantic colours (success green, warning orange) are intentionally fixed.          | Low                             | `src/index.css`                          |
 | 8   | No frontend/IPC tests; the GitHub Actions workflow exists but has not run yet (first push pending at the time of writing).                       | Low                             | `test/`, `.github/workflows/ci.yml`     |
 | 9   | Non-Windows: virtual screen bounds fall back to 1920×1080; click-through and global mouse on macOS/Wayland unverified.                             | High (for cross-platform claim) | `overlay/mod.rs`, `tracker.rs`           |
-| 10  | After a stop the ribbon retracts at the speed it was travelling (spring train), so a long fast trail takes 1–3 s to gather; inherent to soft presets. | Low                             | `crates/fxcursor-render/src/renderer.rs` |
+| 10  | After a stop the bright part of the ribbon retracts into the cursor within ~1 s (node-index taper, as legacy); the faint tail finishes gathering later. | Low                             | `crates/fxcursor-render/src/renderer.rs` |
+| 13  | Vsync-locked pacing was verified by the init log and unit tests, not yet by a high-speed camera; judge smoothness on the desktop with `bun run tauri dev`. | Low                             | `src-tauri/src/overlay/mod.rs`           |
+| 11  | GPU cursor: animated cursors (.ani) freeze on their first frame; only the arrow rotates with movement.                                             | Low (accepted)                  | `src-tauri/src/cursor.rs`, `renderer.rs` |
+| 12  | `kill -9` / power loss while `hide_system_cursor` is active leaves the invisible arrow installed (`SetSystemCursor` persists); next launch cannot know to restore. | Low (accepted)           | `src-tauri/src/cursor.rs`               |
 
 ---
 
@@ -186,9 +237,10 @@ FXCursor V4 is a **Tauri 2 desktop app** that renders GPU cursor effects on a tr
 - [x] Generate TypeScript bindings with `tauri-specta` and delete the hand-written `AppConfig` interfaces (2026-09-09).
 - [x] Parity test between `AppConfig::default()` and `getDefaultConfig()` via a shared fixture (2026-09-09).
 - [x] `effect_mode` implemented (renderer mask + header selector); `fps_counter` implemented as Developer Hub telemetry (2026-09-09).
-- [x] `LivePreview` brought to parity with the Rust physics and effect modes (2026-09-09).
+- [x] `LivePreview` brought to parity with the Rust physics and effect modes (2026-09-09); enforced by the Rust → TS trail trace fixture since 2026-09-23.
 - [x] About tab and Developer Hub from `get_diagnostics`; Rust `log` records streamed to the Dev Console (2026-09-09).
 - [x] Hardcoded cyan replaced with accent tokens (2026-09-09).
+- [x] GPU cursor bypass (`gpu_cursor`): shape extraction, on-top quad with rotation + click bounce, optional system-arrow hide with exit/panic restore (2026-09-22).
 
 ### Phase B — Native input & true idle (V4 Pillar 4)
 
@@ -234,8 +286,8 @@ The sibling `D3D_CURSOR` project (D3D11 engine + Tauri studio) was reviewed in f
 | Tray tooltip showing the live state                                       | ✅ Done ("FXCursor · effects on · preset")                                                                                         |
 | Render thread priority (MMCSS / above-normal)                             | ✅ Done (`THREAD_PRIORITY_ABOVE_NORMAL` on Windows)                                                                                |
 | Custom user presets saved next to `config.json`                           | ✅ Done (`save_user_preset` / `delete_user_preset`, Presets tab)                                                                   |
-| Bypass the system cursor (GPU-drawn HCURSOR with rotation + click bounce) | ⏳ Backlog — needs cursor hiding across apps (`SetSystemCursor`) and a fallback when the hook is muted                             |
-| Click scaling of the real cursor, click-text OSD                          | ⏳ Backlog — depends on the custom cursor above                                                                                    |
+| Bypass the system cursor (GPU-drawn HCURSOR with rotation + click bounce) | ✅ Done (2026-09-22): `gpu_cursor` extraction + on-top quad + `SetSystemCursor` hide with exit/panic restore                                |
+| Click scaling of the real cursor, click-text OSD                          | ✅ Bounce done on the GPU cursor (`click_scale_percent` / `_duration_ms`); click-text OSD ⏳ Backlog                        |
 | Multi-touch trails                                                        | ⏳ Backlog — `WM_POINTER` input source feeding several `TrailChain`s                                                               |
 | `WM_DISPLAYCHANGE` debounce, DwmFlush pacing, 8-frame flush               | ➖ Covered differently: bounds polled every second, frame pacing to the display refresh, 3 settle frames                            |
 | `position_history_skip`                                                   | ➖ Not adopted (unused even there)                                                                                                 |
@@ -243,10 +295,10 @@ The sibling `D3D_CURSOR` project (D3D11 engine + Tauri studio) was reviewed in f
 ### Suggested next working session
 
 1. Run the GitHub Actions workflow on the new repository and fix anything platform-specific it reports.
-2. Custom cursor (bypass the system cursor) + click bounce, the last big D3D_CURSOR feature.
-3. macOS `CGEventTap` / Linux evdev input sources and overlay verification (Phase E).
-4. Decide the daemon's fate (Phase C) — recommendation: delete it once a native overlay window exists.
-5. Measure idle CPU and click-to-ripple latency; record the numbers here.
+2. macOS `CGEventTap` / Linux evdev input sources and overlay verification (Phase E).
+3. Decide the daemon's fate (Phase C) — recommendation: delete it once a native overlay window exists.
+4. Measure idle CPU and click-to-ripple latency; record the numbers here.
+5. Click-text OSD and per-app cursor overrides on top of the shipped `gpu_cursor` bypass.
 
 ---
 
@@ -263,6 +315,8 @@ bun run arch               # regenerate ARCHITECTURE.md
 bun run tauri build        # release build + NSIS installer
 bun run package:portable   # portable zip (exe + portable marker + Data/)
 ```
+
+> **Trail-only defaults**: factory config enables only the ribbon (`effect_mode: Ribbon`, head/ripples/particles off). After upgrading an existing install, press **Reset Defaults** once in the Developer Hub — self-healing keeps stored `enabled` flags from the old `config.json`.
 
 Configuration file locations:
 

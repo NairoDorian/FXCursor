@@ -9,6 +9,7 @@
 //    the colour pass draws only fragments whose depth is >= it (within a tiny epsilon). Overlapping capsules
 //    of one layer therefore never blend twice, while later layers still composite "over".
 // 2. SDF BILLBOARDS: head, ripples, particles and satellites as instanced circles/rings.
+// 3. GPU CURSOR: the extracted OS cursor shape as a textured quad drawn last (on top).
 // =============================================================================
 
 struct Uniforms {
@@ -42,7 +43,7 @@ struct CapsuleVertexInput {
     @location(3) radii: vec2<f32>,        // Radius at a, radius at b
     @location(4) color_a: vec4<f32>,      // Straight (non-premultiplied) RGBA at a
     @location(5) color_b: vec4<f32>,      // Straight RGBA at b
-    @location(6) params: vec4<f32>,       // [blur 0..1, layer index, segment index, unused]
+    @location(6) params: vec4<f32>,       // [blur at a, layer index, segment index, blur at b]
 };
 
 struct CapsuleVertexOutput {
@@ -104,7 +105,7 @@ fn capsule_fragment(in: CapsuleVertexOutput, depth_bias: f32) -> CapsuleFragment
 
     // Feather: `blur` is the fraction of the radius that fades out; never thinner than
     // ~1.5 screen pixels so the edge stays anti-aliased at any width.
-    let blur = clamp(in.params.x, 0.0, 1.0);
+    let blur = clamp(mix(in.params.x, in.params.w, t), 0.0, 1.0);
     let fw = fwidth(v);
     let effective_blur = max(blur, fw * 1.5);
     let edge = 1.0 - smoothstep(1.0 - effective_blur, 1.0, v);
@@ -115,10 +116,13 @@ fn capsule_fragment(in: CapsuleVertexOutput, depth_bias: f32) -> CapsuleFragment
         discard;
     }
 
-    // Depth = layer band + coverage (+ tiny per-segment tie breaker). Higher wins.
+    // Depth = layer band + coverage (+ head-favouring tie breaker). Higher wins.
+    // Head segments have a low `seg` index and are drawn first, so at a fold the head must
+    // win coverage ties; the bias decays with `seg` so deep tails stay inside the band.
     let layer = in.params.y;
     let seg = in.params.z;
-    let depth = (layer + alpha * 0.99 + 0.001 + seg * 1e-6) / LAYER_BANDS;
+    let seg_bias = 1e-3 / (1.0 + seg);
+    let depth = (layer + 0.001 + seg_bias + alpha * 0.99) / LAYER_BANDS;
 
     var out: CapsuleFragmentOutput;
     out.color = vec4<f32>(c.rgb * alpha, alpha);
@@ -215,4 +219,37 @@ fn fs_circle(in: CircleVertexOutput) -> @location(0) vec4<f32> {
     let a = in.color.a * alpha;
     // Pre-multiplied alpha
     return vec4<f32>(in.color.rgb * a, a);
+}
+
+// ==========================================
+// 3. GPU CURSOR SHAPE (textured quad)
+// ==========================================
+// Texture + sampler live in group 1; only the cursor entry points reference them, so the
+// ribbon/billboard pipelines (layout with group 0 only) validate unchanged.
+
+@group(1) @binding(0) var cursor_tex: texture_2d<f32>;
+@group(1) @binding(1) var cursor_smp: sampler;
+
+struct CursorVertexInput {
+    @location(0) pos: vec2<f32>,           // World position (virtual-screen pixels)
+    @location(1) uv: vec2<f32>,            // Texture coordinates (top-down)
+};
+
+struct CursorVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_cursor(v: CursorVertexInput) -> CursorVertexOutput {
+    var out: CursorVertexOutput;
+    out.clip_position = to_clip(v.pos);
+    out.uv = v.uv;
+    return out;
+}
+
+/// Sampled pixels are already pre-multiplied on the CPU → One / OneMinusSrcAlpha blend.
+@fragment
+fn fs_cursor(in: CursorVertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(cursor_tex, cursor_smp, in.uv);
 }

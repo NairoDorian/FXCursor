@@ -29,6 +29,7 @@ describe('Rust ⇄ TypeScript default config parity', () => {
       'satellites',
       'rainbow',
       'fps_counter',
+      'gpu_cursor',
     ]) {
       expect(fixture).toHaveProperty(key);
     }

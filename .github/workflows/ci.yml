@@ -66,9 +66,13 @@ jobs:
         run: |
           cargo run -q -p fxcursor-protocol --example dump_default > /tmp/default_config.json
           cargo run -q -p fxcursor-render --example dump_mode_masks > /tmp/mode_masks.json
+          cargo run -q -p fxcursor-render --example dump_trail_trace > /tmp/trail_trace.json
+          cargo run -q -p fxcursor-protocol --example dump_presets > /tmp/builtin_presets.json
           # Windows runners check out with CRLF; compare content only.
           diff -u --strip-trailing-cr test/fixtures/default_config.json /tmp/default_config.json
           diff -u --strip-trailing-cr test/fixtures/mode_masks.json /tmp/mode_masks.json
+          diff -u --strip-trailing-cr test/fixtures/trail_trace.json /tmp/trail_trace.json
+          diff -u --strip-trailing-cr src/lib/generated/builtin_presets.json /tmp/builtin_presets.json
 
   build-windows:
     name: Release build (Windows)

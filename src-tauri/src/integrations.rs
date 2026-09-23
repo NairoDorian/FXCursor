@@ -75,11 +75,22 @@ pub fn sync_hotkey(app: &AppHandle, desired: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Last autostart state this process confirmed or set; `None` until the first sync.
+static AUTOSTART_SYNCED: Mutex<Option<bool>> = Mutex::new(None);
+
 /// Enables or disables the OS login item so it matches `wanted`.
+///
+/// `commit()` runs on every configuration change (every slider tick), so the OS is only
+/// queried when `wanted` differs from the last state this process confirmed.
 pub fn sync_autostart(app: &AppHandle, wanted: bool) {
+    let mut synced = AUTOSTART_SYNCED.lock().unwrap_or_else(|p| p.into_inner());
+    if *synced == Some(wanted) {
+        return;
+    }
     let launcher = app.autolaunch();
     let current = launcher.is_enabled().unwrap_or(false);
     if current == wanted {
+        *synced = Some(wanted);
         return;
     }
     let result = if wanted {
@@ -88,7 +99,10 @@ pub fn sync_autostart(app: &AppHandle, wanted: bool) {
         launcher.disable()
     };
     match result {
-        Ok(()) => log::info!("[autostart] login autostart set to {wanted}"),
+        Ok(()) => {
+            log::info!("[autostart] login autostart set to {wanted}");
+            *synced = Some(wanted);
+        }
         Err(err) => log::warn!("[autostart] could not set autostart={wanted}: {err}"),
     }
 }

@@ -1,10 +1,10 @@
 //! Input hub: a single shared, event-driven source of cursor position, button state and
 //! discrete click events for the render thread.
 //!
-//! * Windows: a `WH_MOUSE_LL` low-level hook on a dedicated message thread pushes every move and
-//!   button transition into the hub (see [`windows`]). Clicks shorter than a frame are therefore
-//!   never lost. A `GetCursorPos` poll remains as a fallback for the UIPI case (hooks are muted
-//!   while an elevated window has focus).
+//! * Windows: a `WH_MOUSE_LL` low-level hook on a dedicated message thread records every button
+//!   transition and wakes the render loop on motion (see [`windows`]); clicks shorter than a
+//!   frame are therefore never lost. The position itself comes from the `GetCursorPos` poll the
+//!   render loop runs each iteration (clipped, unlike the hook's coordinates).
 //! * Other platforms: `device_query` polling with edge detection done here.
 //!
 //! The render loop calls [`InputHub::wait_for_activity`] while idle, so the thread parks in the
@@ -91,14 +91,13 @@ impl InputHub {
         }
     }
 
-    /// Feed a button transition. A press is also recorded as a discrete click event.
+    /// Feed a button transition. A press is also recorded as a discrete click event at
+    /// `(x, y)`; the tracked pointer position is left to [`Self::push_move`].
     pub fn push_button(&self, button: usize, pressed: bool, x: f32, y: f32) {
         if button >= BUTTON_COUNT {
             return;
         }
         let mut g = self.lock();
-        g.x = x;
-        g.y = y;
         if g.buttons[button] != pressed {
             g.buttons[button] = pressed;
             if pressed {

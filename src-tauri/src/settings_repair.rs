@@ -72,13 +72,20 @@ pub fn load_or_repair(path: &Path) -> AppConfig {
         }
     };
 
-    let outcome: RepairOutcome<AppConfig> = match deserialize_with_self_healing(&raw) {
+    let mut outcome: RepairOutcome<AppConfig> = match deserialize_with_self_healing(&raw) {
         Ok(o) => o,
         Err(err) => {
             log::error!("[settings] self-healing failed ({err}); using defaults");
             return AppConfig::default();
         }
     };
+    // Types are healed above; ranges here (a hand-edited file can hold anything).
+    let clamped = outcome.value.sanitize();
+    if !clamped.is_empty() {
+        log::warn!("[settings] clamped out-of-range value(s): {clamped:?}");
+        outcome.repaired_paths.extend(clamped.iter().map(|p| p.to_string()));
+        outcome.needs_rewrite = true;
+    }
 
     if outcome.needs_rewrite {
         log::warn!(
@@ -119,34 +126,63 @@ pub fn save(path: &Path, config: &AppConfig) -> Result<(), String> {
     Ok(())
 }
 
+enum SaveMsg {
+    // Boxed: an `AppConfig` is ~0.5 KB and the flush variant is a single sender.
+    Save(Box<AppConfig>),
+    /// Write any pending snapshot now, then acknowledge.
+    Flush(Sender<()>),
+}
+
 /// Debounced background writer. Cloneable handle; drop all handles to stop the thread.
 #[derive(Clone)]
 pub struct AutoSaver {
-    tx: Sender<AppConfig>,
+    tx: Sender<SaveMsg>,
 }
 
 impl AutoSaver {
     pub fn spawn(path: PathBuf) -> Self {
-        let (tx, rx) = mpsc::channel::<AppConfig>();
+        let (tx, rx) = mpsc::channel::<SaveMsg>();
+        let write = move |config: &AppConfig| match save(&path, config) {
+            Ok(()) => log::debug!("[settings] autosaved {}", path.display()),
+            Err(err) => log::warn!("[settings] autosave failed: {err}"),
+        };
         std::thread::Builder::new()
             .name("config-autosave".into())
             .spawn(move || {
-                while let Ok(mut latest) = rx.recv() {
-                    // Coalesce: keep swallowing updates until the stream goes quiet.
-                    loop {
+                let mut pending: Option<AppConfig> = None;
+                loop {
+                    // Coalesce: while a snapshot is pending, keep swallowing updates until the
+                    // stream goes quiet for AUTOSAVE_DEBOUNCE.
+                    let msg = if pending.is_some() {
                         match rx.recv_timeout(AUTOSAVE_DEBOUNCE) {
-                            Ok(newer) => latest = newer,
-                            Err(RecvTimeoutError::Timeout) => break,
+                            Ok(msg) => msg,
+                            Err(RecvTimeoutError::Timeout) => {
+                                if let Some(config) = pending.take() {
+                                    write(&config);
+                                }
+                                continue;
+                            }
                             Err(RecvTimeoutError::Disconnected) => {
-                                let _ = save(&path, &latest);
+                                if let Some(config) = pending.take() {
+                                    write(&config);
+                                }
                                 return;
                             }
                         }
-                    }
-                    if let Err(err) = save(&path, &latest) {
-                        log::warn!("[settings] autosave failed: {err}");
                     } else {
-                        log::debug!("[settings] autosaved {}", path.display());
+                        match rx.recv() {
+                            Ok(msg) => msg,
+                            Err(_) => return,
+                        }
+                    };
+                    match msg {
+                        SaveMsg::Save(config) => pending = Some(*config),
+                        SaveMsg::Flush(ack) => {
+                            if let Some(config) = pending.take() {
+                                write(&config);
+                            }
+                            let _ = ack.send(());
+                        }
                     }
                 }
             })
@@ -156,7 +192,14 @@ impl AutoSaver {
 
     /// Queue a snapshot for writing. Cheap; safe to call on every slider tick.
     pub fn schedule(&self, config: &AppConfig) {
-        let _ = self.tx.send(config.clone());
+        let _ = self.tx.send(SaveMsg::Save(Box::new(config.clone())));
+    }
+
+    /// Writes any snapshot still inside the debounce window and waits (bounded) for it.
+    /// Called on exit: `process::exit` would otherwise kill the thread and lose the last edit.
+    pub fn flush(&self, timeout: std::time::Duration) -> bool {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        self.tx.send(SaveMsg::Flush(ack_tx)).is_ok() && ack_rx.recv_timeout(timeout).is_ok()
     }
 }
 
@@ -195,6 +238,31 @@ mod tests {
         assert_eq!(reloaded, loaded);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("json.bak"));
+    }
+
+    #[test]
+    fn out_of_range_values_are_clamped_on_load() {
+        let path = temp_path("clamped.json");
+        let mut cfg = AppConfig::default();
+        cfg.trail.spring = 9_000.0;
+        save(&path, &cfg).unwrap();
+        let loaded = load_or_repair(&path);
+        assert_eq!(loaded.trail.spring, 500.0);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("json.bak"));
+    }
+
+    #[test]
+    fn flush_writes_a_pending_snapshot_immediately() {
+        let path = temp_path("flushed.json");
+        let _ = std::fs::remove_file(&path);
+        let saver = AutoSaver::spawn(path.clone());
+        let mut cfg = AppConfig::default();
+        cfg.trail.length = 33;
+        saver.schedule(&cfg);
+        assert!(saver.flush(std::time::Duration::from_secs(2)));
+        assert_eq!(load_or_repair(&path).trail.length, 33, "written before the debounce");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

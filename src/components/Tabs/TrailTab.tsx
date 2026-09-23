@@ -2,26 +2,7 @@ import { Component } from 'solid-js';
 import { SectionCard } from '../Common/SectionCard';
 import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
-import { LayerConfig } from '../../lib/presets';
-
-interface TrailConfig {
-  enabled: boolean;
-  length: number;
-  spring: number;
-  damping: number;
-  head_spring: number;
-  head_damping: number;
-  lead_nodes?: number;
-  cursor_size: number;
-  min_width: number;
-  velocity_width_mult: number;
-  velocity_alpha_mult: number;
-  interpolation_steps: number;
-  fade_mode: number;
-  enable_gradient: boolean;
-  adaptive_quality: boolean;
-  layers: [LayerConfig, LayerConfig, LayerConfig, LayerConfig];
-}
+import type { TrailConfig } from '../../lib/presets';
 
 interface TrailTabProps {
   trail: TrailConfig;
@@ -33,55 +14,92 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
     props.onChange({ ...props.trail, ...patch });
   };
 
+  // Index = `fade_mode` (`apply_fade_curve` in renderer.rs / `fadeCurve` in lib/trail.ts).
   const fadeModes = ['Linear', 'Ease Out', 'Exponential', 'Sigmoid', 'Smoothstep'];
 
   return (
     <div style="display: flex; flex-direction: column; gap: 16px;">
-      {/* Head Kinematics */}
+      {/* Head Kinematics (the header switch is the master toggle for the whole ribbon) */}
       <SectionCard
-        title="Head Point Kinematics"
-        desc="Spring force and velocity friction pulling the leading ribbon head toward the hardware cursor"
+        title="Ribbon Trail · Head Kinematics"
+        desc="Windhawk spring-damper pulling the leading node toward the pointer (or the Lazy Brush); the switch turns the whole trail on or off"
         headerRight={
-          <Toggle checked={props.trail.enabled} onChange={(v) => update({ enabled: v })} />
+          <Toggle
+            ariaLabel="Enable ribbon trail"
+            checked={props.trail.enabled}
+            onChange={(v) => update({ enabled: v })}
+          />
         }
       >
         <Slider
-          label="Head Follow Strength"
-          sub="How tightly the ribbon head tracks the pointer; it follows without overshooting (5 = loose, 98 = glued)"
-          min={5}
-          max={98}
+          label="Head Spring Strength"
+          sub="Spring constant ÷1000 per 1/120 s (1 = loose and lagging, 500 = glued to the pointer)"
+          min={1}
+          max={500}
           step={1}
-          value={props.trail.head_spring ?? props.trail.spring}
+          value={props.trail.head_spring}
           onChange={(v) => update({ head_spring: v })}
         />
         <Slider
-          label="Head Smoothing"
-          sub="Jitter filter applied to the raw cursor before the head follows it (0 = raw, 95 = very smooth)"
+          label="Head Friction"
+          sub="Velocity lost per 1/120 s in percent (0 = springy overshoot, 99 = heavy damping)"
           min={0}
-          max={95}
+          max={99}
           step={1}
-          value={props.trail.head_damping ?? props.trail.damping}
+          value={props.trail.head_damping}
           onChange={(v) => update({ head_damping: v })}
         />
+      </SectionCard>
+
+      {/* LazyBrush dead-zone pointer smoother */}
+      <SectionCard
+        title="Lazy Brush"
+        desc="Dead-zone smoother between the raw pointer and the ribbon: micro-jitter never reaches the trail"
+      >
+        <div class="control-row">
+          <div class="control-label">
+            <span>Enable Lazy Brush</span>
+            <span class="control-sub">Hold the brush still until the pointer leaves the dead zone</span>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              aria-label="Enable Lazy Brush"
+              checked={props.trail.lazy_enabled ?? false}
+              onChange={(e) => update({ lazy_enabled: e.currentTarget.checked })}
+            />
+            <span class="slider-round" />
+          </label>
+        </div>
         <Slider
-          label="Lead Nodes"
-          sub="Leading nodes that follow the pointer without whipping before the spring chain takes over (1 - 12)"
-          min={1}
-          max={12}
+          label="Dead-Zone Radius"
+          sub="Distance the pointer must travel before the brush starts moving (5 - 150 px)"
+          min={5}
+          max={150}
           step={1}
-          value={props.trail.lead_nodes ?? 4}
-          onChange={(v) => update({ lead_nodes: v })}
+          unit="px"
+          value={props.trail.lazy_radius ?? 30}
+          onChange={(v) => update({ lazy_radius: v })}
+        />
+        <Slider
+          label="Brush Friction"
+          sub="How slowly the brush catches up once outside the dead zone (0 = instant, 0.99 = frozen)"
+          min={0}
+          max={0.99}
+          step={0.01}
+          value={props.trail.lazy_friction ?? 0.4}
+          onChange={(v) => update({ lazy_friction: v })}
         />
       </SectionCard>
 
       {/* Trail Body Chain Physics */}
       <SectionCard
         title="Trail Body Spring Chain Physics"
-        desc="D3D11 multi-segment spring-damper chain with second-order neighbor curvature stabilization"
+        desc="Windhawk spring-damper chain with 0.3× second-neighbour coupling (a 512 px gap guard only catches teleports)"
       >
         <Slider
           label="Trail Segment Spring Strength"
-          sub="Elastic tension between consecutive trail nodes (1 - 500)"
+          sub="Spring constant ÷1000 between consecutive nodes (1 = long lazy tail, 500 = short stiff tail)"
           min={1}
           max={500}
           step={1}
@@ -90,7 +108,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
         />
         <Slider
           label="Trail Segment Friction / Damping"
-          sub="Fluid viscosity and drag along the ribbon body (0 - 99)"
+          sub="Velocity lost per 1/120 s in percent along the body (0 = wobbly, 99 = sluggish)"
           min={0}
           max={99}
           step={1}
@@ -99,7 +117,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
         />
         <Slider
           label="Trail Node Count (Length)"
-          sub="Total discrete physical links simulated in the chain (4 - 150)"
+          sub="Nodes in the chain (4 - 150); the fade and width taper run over the node index"
           min={4}
           max={150}
           step={1}
@@ -128,10 +146,15 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
         />
         <Slider
           label="Curve Smoothness (Spline Steps)"
-          sub="Catmull-Rom sub-samples per segment for silky curves (1 - 10)"
+          sub={
+            props.trail.adaptive_quality
+              ? 'Ignored while Adaptive Quality picks the sample density from the curvature'
+              : 'Fixed Catmull-Rom sub-samples per node segment (1 - 10)'
+          }
           min={1}
           max={10}
           step={1}
+          disabled={props.trail.adaptive_quality}
           value={props.trail.interpolation_steps}
           onChange={(v) => update({ interpolation_steps: v })}
         />
@@ -162,7 +185,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
 
         <Slider
           label="Velocity Width Multiplier"
-          sub="Dynamic ribbon widening during rapid flicks (0.0x - 5.0x)"
+          sub="Extra width at full speed (reached at 2400 px/s, as in Windhawk)"
           min={0}
           max={5.0}
           step={0.05}
@@ -172,7 +195,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
         />
         <Slider
           label="Velocity Alpha Multiplier"
-          sub="Brightness amplification during rapid flicks (0.0x - 5.0x)"
+          sub="Extra opacity at full speed (same speed scale as the width boost)"
           min={0}
           max={5.0}
           step={0.05}
@@ -189,6 +212,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           <label class="switch">
             <input
               type="checkbox"
+              aria-label="Enable color gradient blending"
               checked={props.trail.enable_gradient}
               onChange={(e) => update({ enable_gradient: e.currentTarget.checked })}
             />
@@ -200,12 +224,14 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           <div class="control-label">
             <span>Adaptive Quality Scaling</span>
             <span class="control-sub">
-              Optimizes spline sub-steps during ultra-fast flicks for 0ms frame lag
+              Dense samples in bends, sparse on straight runs (3 - 24 px spacing); fewer capsules
+              for the same smoothness
             </span>
           </div>
           <label class="switch">
             <input
               type="checkbox"
+              aria-label="Adaptive quality scaling"
               checked={props.trail.adaptive_quality}
               onChange={(e) => update({ adaptive_quality: e.currentTarget.checked })}
             />

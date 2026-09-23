@@ -33,6 +33,7 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         desc="Feathered exterior border providing contrast across dark backdrops (150% width reference)"
         headerRight={
           <Toggle
+            ariaLabel="Enable layer 1"
             checked={props.layers[0].enabled}
             onChange={(v) => updateLayer(0, { enabled: v })}
           />
@@ -98,6 +99,7 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         desc="Dark contrast border preventing ribbon washout against pure white surfaces (90% width reference)"
         headerRight={
           <Toggle
+            ariaLabel="Enable layer 2"
             checked={props.layers[1].enabled}
             onChange={(v) => updateLayer(1, { enabled: v })}
           />
@@ -163,6 +165,7 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         desc="Primary solid luminous interior ribbon (50% width reference)"
         headerRight={
           <Toggle
+            ariaLabel="Enable layer 3"
             checked={props.layers[2].enabled}
             onChange={(v) => updateLayer(2, { enabled: v })}
           />
@@ -228,6 +231,7 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         desc="Ultra-thin centerline needle maintaining razor-sharp tracking alignment (15% width reference)"
         headerRight={
           <Toggle
+            ariaLabel="Enable layer 4"
             checked={props.layers[3].enabled}
             onChange={(v) => updateLayer(3, { enabled: v })}
           />

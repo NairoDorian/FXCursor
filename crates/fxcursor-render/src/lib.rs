@@ -2,7 +2,9 @@
 //! experimental headless daemon (`crates/fxcursor-daemon`).
 //!
 //! Responsibilities:
-//! * CPU physics: spring-damper trail chain, squishy head, ripples, particles, satellites.
+//! * CPU physics: spring-damper trail chain ([`TrailChain`], mirrored in TypeScript by
+//!   `src/lib/trail.ts` and checked against `test/fixtures/trail_trace.json`), squishy head,
+//!   ripples, particles, satellites.
 //! * Geometry: Catmull-Rom resampling of the chain, then one round capsule per sample pair and
 //!   layer; the union of capsules is resolved on the GPU with a depth-based max-coverage test
 //!   (`shaders/render.wgsl`), so joins and caps are round and overlaps never double-blend.
@@ -15,9 +17,13 @@
 //! `shaders/physics.wgsl` is a prototype compute pass (spring chain + particles) that is **not**
 //! dispatched yet; it is kept here as the starting point for GPU-side physics.
 
+pub mod cursor;
 pub mod renderer;
 
+pub use cursor::{
+    cursor_quad_vertices, CursorShape, CursorVertex, GpuCursorState,
+};
 pub use renderer::{
     build_layer_capsules, build_samples, CapsuleInstance, CircleInstance, ModeMask,
-    OverlayRenderer, Sample, DEPTH_FORMAT,
+    OverlayRenderer, Sample, TrailChain, DEPTH_FORMAT,
 };

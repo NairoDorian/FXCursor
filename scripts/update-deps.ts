@@ -9,11 +9,14 @@ import path from 'node:path';
  * 1. Dynamic NPM Registry Querying (prerelease dist-tags & @latest)
  * 2. Dynamic Crates.io Registry Querying (newest_version prereleases & max_version)
  * 3. Direct Workspace Dependency Upgrading (package.json & all workspace Cargo.toml files)
- * 4. Transitive Sub-Dependency Upgrading (bun update --latest & cargo update)
+ * 4. Transitive Sub-Dependency Refresh within the pinned ranges (bun update & cargo update)
  * 5. Full Inventory Audit & Diff Tracking (Cargo.lock & node_modules)
  * 6. Vite Production Build Validation (bun run build)
  * 7. TypeScript Strict Typecheck (bun run typecheck)
- * 8. Native Cargo Workspace Backend Compilation Verification (cargo check --workspace)
+ * 8. Cargo workspace check + unit tests, Bun tests
+ *
+ * Never downgrades: a registry answer that is not strictly newer than the current pin is
+ * ignored. Any failing step aborts with a non-zero exit code.
  */
 
 const cliArgs = new Set(process.argv.slice(2));
@@ -196,9 +199,6 @@ async function fetchLatestCrateVersion(
   current: string,
   prerelease = true
 ): Promise<string | null> {
-  if (crateName === 'winit') {
-    return null; // winit 0.31-beta changed Window into dyn Window trait
-  }
   try {
     const response = await fetch(`https://crates.io/api/v1/crates/${crateName}`, {
       headers: { 'User-Agent': 'FXCursorUpdater/4.0' },
@@ -216,7 +216,11 @@ async function fetchLatestCrateVersion(
       ) {
         return crate.newest_version;
       }
-      return crate.max_version || null;
+      // `max_version` is the newest *stable*: only an upgrade if it beats the current pin
+      // (returning it unconditionally rewrote e.g. `=2.0.0-rc.25` down to 1.x).
+      return crate.max_version && compareVersions(crate.max_version, current) > 0
+        ? crate.max_version
+        : null;
     }
   } catch {}
   return null;
@@ -279,6 +283,51 @@ function runCmd(
   return { success: res.status === 0, durationMs };
 }
 
+/** Runs a pipeline step and aborts the whole update when it fails. */
+function mustRun(label: string, cmd: string, args: string[]): void {
+  console.log(label);
+  if (!runCmd(cmd, args).success) {
+    console.error(`❌ ${cmd} ${args.join(' ')} failed; aborting (files may already be modified).`);
+    process.exit(1);
+  }
+}
+
+/** True when `latest` is a real upgrade over the pinned `current` (never a downgrade). */
+function isUpgrade(latest: string | null, current: string): latest is string {
+  return latest !== null && compareVersions(latest, current) > 0;
+}
+
+/** Root + every workspace member manifest (`crates/*`, `src-tauri`). */
+function workspaceManifests(): string[] {
+  const found = [path.resolve('Cargo.toml'), path.resolve('src-tauri/Cargo.toml')];
+  const cratesDir = path.resolve('crates');
+  if (fs.existsSync(cratesDir)) {
+    for (const entry of fs.readdirSync(cratesDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) found.push(path.join(cratesDir, entry.name, 'Cargo.toml'));
+    }
+  }
+  return found.filter((p) => fs.existsSync(p));
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function printReport(statuses: DependencyStatus[], applied: boolean): void {
+  console.log('\n=================================================================');
+  console.log(`📊 DEPENDENCY STATUS REPORT (FXCURSOR V4)${applied ? '' : ' — DRY RUN, nothing changed'}`);
+  console.log('=================================================================');
+  for (const s of statuses.toSorted((a, b) => a.name.localeCompare(b.name))) {
+    const statusText = s.needsUpdate
+      ? `${applied ? '✨ Upgraded' : '⬆️ Would upgrade'}${s.prerelease ? ' (pre-release)' : ''}`
+      : '⚡ Up-to-date';
+    console.log(
+      ` ${s.name.padEnd(30, ' ')} | ${s.ecosystem.padEnd(12, ' ')} | ${s.currentVersion.padEnd(9, ' ')} | ${s.latestVersion.padEnd(9, ' ')} | ${statusText}`
+    );
+  }
+  console.log('=================================================================');
+}
+
 async function updateEverything() {
   console.log('=================================================================');
   console.log(
@@ -287,12 +336,9 @@ async function updateEverything() {
   console.log('=================================================================\n');
 
   const pkgPath = path.resolve('package.json');
-  const cargoTomlPaths = [
-    path.resolve('Cargo.toml'),
-    path.resolve('src-tauri/Cargo.toml'),
-    path.resolve('crates/fxcursor-daemon/Cargo.toml'),
-    path.resolve('crates/fxcursor-protocol/Cargo.toml'),
-  ].filter((p) => fs.existsSync(p));
+  // Discovered, not listed: a hard-coded list once missed crates/fxcursor-render, leaving its
+  // wgpu behind src-tauri's (two wgpu majors in one build).
+  const cargoTomlPaths = workspaceManifests();
 
   const cargoLockPath = path.resolve('Cargo.lock');
 
@@ -312,7 +358,7 @@ async function updateEverything() {
       (async () => {
         const currClean = cleanVersion(ver as string);
         const latest = await fetchLatestNpmVersion(name, currClean, PRERELEASE_MODE);
-        const needs = latest ? currClean !== latest : false;
+        const needs = isUpgrade(latest, currClean);
         allStatuses.push({
           name,
           ecosystem: 'NPM (Bun)',
@@ -332,7 +378,7 @@ async function updateEverything() {
       (async () => {
         const currClean = cleanVersion(ver as string);
         const latest = await fetchLatestNpmVersion(name, currClean, PRERELEASE_MODE);
-        const needs = latest ? currClean !== latest : false;
+        const needs = isUpgrade(latest, currClean);
         allStatuses.push({
           name,
           ecosystem: 'NPM (Bun)',
@@ -359,15 +405,9 @@ async function updateEverything() {
         return;
       }
 
-      if (
-        [
-          'dependencies',
-          'build-dependencies',
-          'dev-dependencies',
-          'workspace.dependencies',
-          "target.'cfg(windows)'.dependencies",
-        ].includes(currentSection)
-      ) {
+      // Every dependency table, including platform ones such as
+      // [target.'cfg(not(windows))'.dependencies] or [target.'cfg(target_os = "macos")'.dependencies].
+      if (/(^|\.)(dependencies|build-dependencies|dev-dependencies)$/.test(currentSection)) {
         if (trimmed.includes('path =') || trimmed.includes('workspace = true')) {
           return; // skip local path/workspace deps
         }
@@ -381,7 +421,7 @@ async function updateEverything() {
             (async () => {
               const currClean = cleanVersion(ver);
               const latest = await fetchLatestCrateVersion(name, currClean, PRERELEASE_MODE);
-              const needs = latest ? currClean !== latest : false;
+              const needs = isUpgrade(latest, currClean);
               allStatuses.push({
                 name,
                 ecosystem: 'Cargo (Rust)',
@@ -404,7 +444,7 @@ async function updateEverything() {
   console.log(`✅ Registry query complete (${queryDuration}ms)\n`);
 
   if (DRY_RUN) {
-    console.log('DRY RUN COMPLETE.');
+    printReport(allStatuses, false);
     process.exit(0);
   }
 
@@ -416,7 +456,7 @@ async function updateEverything() {
   if (outdatedRuntime.length > 0) {
     console.log(`📦 Upgrading ${outdatedRuntime.length} NPM Runtime Dependencies...`);
     const targets = outdatedRuntime.map((s) => `${s.name}@${s.latestVersion}`);
-    runCmd('bun', ['add', ...targets]);
+    mustRun('   bun add', 'bun', ['add', ...targets]);
   }
 
   // 2. Upgrade NPM dev deps
@@ -424,7 +464,7 @@ async function updateEverything() {
   if (outdatedDev.length > 0) {
     console.log(`🛠️ Upgrading ${outdatedDev.length} NPM DevDependencies...`);
     const targets = outdatedDev.map((s) => `${s.name}@${s.latestVersion}`);
-    runCmd('bun', ['add', '-d', ...targets]);
+    mustRun('   bun add -d', 'bun', ['add', '-d', ...targets]);
   }
 
   // 3. Upgrade Cargo.toml files
@@ -436,47 +476,34 @@ async function updateEverything() {
       outdatedCargo
         .filter((c) => c.filePath === tomlPath)
         .forEach((crate) => {
+          // Anchored to the start of the line (`specta` must not also rewrite `tauri-specta`)
+          // and keeping the original operator (`=` exact pins stay exact).
+          const name = escapeRegExp(crate.name);
           const regInline = new RegExp(
-            `(${crate.name}\\s*=\\s*\\{[^}]*version\\s*=\\s*")([^"]+)(")`,
-            'g'
+            `^(\\s*${name}\\s*=\\s*\\{[^}\\n]*version\\s*=\\s*"[\\^~=<>]*)([^"]+)(")`,
+            'gm'
           );
-          const regSimple = new RegExp(`(${crate.name}\\s*=\\s*")([^"]+)(")`, 'g');
+          const regSimple = new RegExp(`^(\\s*${name}\\s*=\\s*"[\\^~=<>]*)([^"]+)(")`, 'gm');
           content = content
-            .replace(regInline, `$1^${crate.latestVersion}$3`)
-            .replace(regSimple, `$1^${crate.latestVersion}$3`);
+            .replace(regInline, `$1${crate.latestVersion}$3`)
+            .replace(regSimple, `$1${crate.latestVersion}$3`);
         });
       fs.writeFileSync(tomlPath, content, 'utf8');
     });
   }
 
   // 4. Sub-dependencies refresh
-  console.log('🔒 Refreshing all transitive sub-dependencies (bun update & cargo update)...');
-  runCmd('bun', ['update', '--latest']);
-  runCmd('cargo', ['update']);
+  // `bun update` (no --latest) stays inside the ranges just written: `--latest` would move
+  // every package to its `latest` dist-tag, i.e. back from a pre-release (solid-js 2 rc → 1.x).
+  mustRun('🔒 Refreshing transitive sub-dependencies (bun update)...', 'bun', ['update']);
+  mustRun('🔒 Refreshing Cargo.lock (cargo update)...', 'cargo', ['update']);
 
-  // 5. TypeScript validation
-  console.log('📐 Checking TypeScript types...');
-  const tscRes = runCmd('bun', ['run', 'typecheck']);
-  if (!tscRes.success) {
-    console.error('❌ TypeScript check failed!');
-    process.exit(1);
-  }
-
-  // 6. Vite production build
-  console.log('⚡ Validating Vite production build...');
-  const buildRes = runCmd('bun', ['run', 'build']);
-  if (!buildRes.success) {
-    console.error('❌ Vite build failed!');
-    process.exit(1);
-  }
-
-  // 7. Cargo workspace compilation check
-  console.log('🦀 Validating Cargo workspace check...');
-  const checkRes = runCmd('cargo', ['check', '--workspace']);
-  if (!checkRes.success) {
-    console.error('❌ Cargo workspace check failed!');
-    process.exit(1);
-  }
+  // 5–8. Validation
+  mustRun('📐 Checking TypeScript types...', 'bun', ['run', 'typecheck']);
+  mustRun('⚡ Validating Vite production build...', 'bun', ['run', 'build']);
+  mustRun('🦀 Validating Cargo workspace check...', 'cargo', ['check', '--workspace']);
+  mustRun('🧪 Running Cargo workspace tests...', 'cargo', ['test', '--workspace']);
+  mustRun('🧪 Running Bun tests...', 'bun', ['test']);
 
   const afterCargoLock = parseCargoLock(cargoLockPath);
   const afterBunLock = parseBunInstalledVersions();
@@ -497,24 +524,12 @@ async function updateEverything() {
     }
   });
 
-  console.log('\n=================================================================');
-  console.log('📊 DEPENDENCY STATUS REPORT (FXCURSOR V4)');
-  console.log('=================================================================');
-  allStatuses.forEach((s) => {
-    const namePadded = s.name.padEnd(30, ' ');
-    const ecoPadded = s.ecosystem.padEnd(12, ' ');
-    const currPadded = s.currentVersion.padEnd(9, ' ');
-    const latPadded = s.latestVersion.padEnd(9, ' ');
-    const statusText = s.needsUpdate
-      ? s.prerelease
-        ? '⚠️ Pre-release'
-        : '✨ Upgraded'
-      : '⚡ Up-to-date';
-    console.log(` ${namePadded} | ${ecoPadded} | ${currPadded} | ${latPadded} | ${statusText}`);
-  });
-  console.log('=================================================================');
+  printReport(allStatuses, true);
   console.log(`🎉 Transitive sub-dependencies upgraded: ${subDepChanges.length}`);
   console.log('✅ All dependencies upgraded to latest / pre-release & verified clean!\n');
 }
 
-updateEverything();
+updateEverything().catch((err) => {
+  console.error('❌ update-deps crashed:', err);
+  process.exit(1);
+});

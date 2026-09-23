@@ -11,7 +11,8 @@ import { toast } from '../../lib/toast';
 import { THEME_ACCENTS, applyThemeAccent } from '../../lib/theme';
 
 interface DeveloperTabProps {
-  onResetDefaults: () => void;
+  /** Resolves to `false` when the reset failed (the handler already reported why). */
+  onResetDefaults: () => Promise<boolean>;
   /** `config.fps_counter`: enables live frame telemetry polling at `refresh_rate_ms`. */
   fpsCounter: FpsCounterConfig;
   onFpsCounterChange: (next: FpsCounterConfig) => void;
@@ -87,15 +88,21 @@ export const DeveloperTab: Component<DeveloperTabProps> = (props) => {
     }
     setBenchmarking(true);
     const iterations = 50;
-    const start = performance.now();
-    for (let i = 0; i < iterations; i++) {
-      await commands.ping();
+    try {
+      const start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        await commands.ping();
+      }
+      const elapsed = performance.now() - start;
+      const avg = Math.round((elapsed / iterations) * 100) / 100;
+      setLatencyMs(avg);
+      toast.success(`IPC benchmark: ${avg} ms average round trip over ${iterations} calls`);
+    } catch (e) {
+      toast.error(`IPC benchmark failed: ${e}`);
+    } finally {
+      // A failed ping must not leave the button stuck on "Benchmarking…".
+      setBenchmarking(false);
     }
-    const elapsed = performance.now() - start;
-    const avg = Math.round((elapsed / iterations) * 100) / 100;
-    setLatencyMs(avg);
-    setBenchmarking(false);
-    toast.success(`IPC benchmark: ${avg} ms average round trip over ${iterations} calls`);
   };
 
   const saveNow = async () => {
@@ -180,15 +187,19 @@ export const DeveloperTab: Component<DeveloperTabProps> = (props) => {
       {/* Live frame telemetry */}
       <SectionCard
         title="Render Loop Telemetry"
-        desc="Frames presented per second, CPU cost per frame and geometry counts reported by the gpu-render-thread"
+        desc="Frames presented per second, CPU cost per frame and geometry counts reported by the gpu-render-thread. The switch also draws the FPS counter on the desktop overlay."
         headerRight={
           <div style="display: flex; align-items: center; gap: 10px;">
             <span style="font-size: 11px; color: var(--text-dim);">
               {telemetryOn() ? `every ${pollEvery()} ms` : isTauri ? 'off' : 'desktop app only'}
             </span>
-            <label class="switch" title="Toggle live telemetry (config.fps_counter.enabled)">
+            <label
+              class="switch"
+              title="Live telemetry + the FPS counter drawn on the desktop overlay (config.fps_counter.enabled)"
+            >
               <input
                 type="checkbox"
+                aria-label="Live telemetry and on-overlay FPS counter"
                 checked={props.fpsCounter.enabled}
                 disabled={!isTauri}
                 onChange={(e) =>
@@ -445,8 +456,10 @@ export const DeveloperTab: Component<DeveloperTabProps> = (props) => {
             style="padding: 8px 16px; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.4); color: #ef4444;"
             onClick={() => {
               if (confirm('Are you sure you want to restore all settings to factory defaults?')) {
-                props.onResetDefaults();
-                toast.success('Configuration restored to factory defaults');
+                // The App handler reports failures itself; confirm success only once it resolved.
+                void props.onResetDefaults().then((ok) => {
+                  if (ok) toast.success('Configuration restored to factory defaults');
+                });
               }
             }}
           >

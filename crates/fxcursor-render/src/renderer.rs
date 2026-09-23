@@ -1,6 +1,7 @@
+use crate::cursor::{cursor_quad_vertices, CursorShape, CursorVertex, GpuCursorState};
 use fxcursor_protocol::{AppConfig, EffectMode, LayerConfig};
 use std::time::Instant;
-use wgpu::{BindGroup, Buffer, Device, Queue, RenderPipeline, TextureFormat};
+use wgpu::{BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline, Sampler, TextureFormat};
 
 /// Which subsystems an [`EffectMode`] allows. Individual `enabled` flags in the config still
 /// apply on top of this mask.
@@ -71,7 +72,7 @@ pub struct CapsuleInstance {
     pub radii: [f32; 2],
     pub color_a: [f32; 4],
     pub color_b: [f32; 4],
-    /// `[blur, layer index, segment index, unused]`.
+    /// `[blur at a, layer index, segment index, blur at b]` (blur = feathered radius fraction).
     pub params: [f32; 4],
 }
 
@@ -98,30 +99,44 @@ struct OverlayUniforms {
 struct TrailNode {
     x: f32,
     y: f32,
-    /// Velocity in pixels per reference frame (1/60 s).
+    /// Velocity in pixels per reference frame (1/120 s — Windhawk `kReferenceFrameTime`).
     vx: f32,
     vy: f32,
     speed: f32,
-    /// Unit direction of the last significant motion; zero until the node has moved.
-    dir: (f32, f32),
 }
 
 impl TrailNode {
-    /// Refreshes the cached speed and, if the node moved, its direction of motion.
-    fn finish_step(&mut self, from: (f32, f32)) {
+    fn finish_step(&mut self) {
         self.speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
-        if let Some(dir) = motion_dir(self.x - from.0, self.y - from.1, MIN_DIRECTION_STEP) {
-            self.dir = dir;
-        }
     }
 }
 
-/// Below this per-frame speed (px per reference frame) the pointer's direction is kept.
+/// Below this speed (px per reference frame) a node counts as at rest.
 const MIN_DIRECTION_SPEED: f32 = 0.05;
-/// Smallest per-step displacement (px) that updates a node's direction of motion.
-const MIN_DIRECTION_STEP: f32 = 1e-3;
-/// A blocked node is left this far (px) behind the wall so the next step still sees it behind.
-const OVERTAKE_MARGIN: f32 = 1e-4;
+/// The head counts as arrived when it is this close (px) to the brush (Windhawk: 0.1 px).
+const HEAD_REST_DISTANCE: f32 = 0.1;
+/// Largest gap (px) between consecutive nodes; beyond this the follower is clamped back
+/// (TD-style clamped distance constraint). **Teleport guard only.**
+///
+/// Must sit well above the spring chain's natural steady-state gap, which at the Windhawk
+/// defaults (k=0.05, f=0.7) is `gap ≈ V×(1−f)/(k×f) ≈ 8.6×` px per reference frame — easily
+/// 150–400 px during a hard flick. Windhawk ships **no** constraint; a tight clamp (the old
+/// 64 px) fights the springs every frame of normal motion and injects velocity that reads as
+/// the trail accelerating on sudden movements.
+const MAX_NODE_GAP: f32 = 512.0;
+
+/// TD LazyBrush friction factor: how much of the excess distance the brush covers.
+/// f <= 0 → 1.0 (snap); f >= 1 → 0.0 (frozen); else 1 - sqrt(1 - (1-f)^2).
+fn lazy_brush_factor(friction: f32) -> f32 {
+    if friction <= 0.0 {
+        return 1.0;
+    }
+    if friction >= 1.0 {
+        return 0.0;
+    }
+    let u = 1.0 - friction;
+    1.0 - (1.0 - u * u).sqrt()
+}
 
 // ---- On-overlay FPS HUD: 3×5 dot-matrix font drawn with the SDF circle pipeline -------------
 
@@ -195,72 +210,52 @@ fn push_hud_text(out: &mut Vec<CircleInstance>, text: &str, x: f32, y: f32) {
     }
 }
 
-/// Unit vector of `(dx, dy)` when its length is at least `min_len`.
-fn motion_dir(dx: f32, dy: f32, min_len: f32) -> Option<(f32, f32)> {
-    let len = (dx * dx + dy * dy).sqrt();
-    (len >= min_len && len.is_finite()).then(|| (dx / len, dy / len))
-}
-
-/// The "wall" a node may not cross: the line through its predecessor perpendicular to the
-/// predecessor's direction of motion `dir`.
-type Wall = ((f32, f32), (f32, f32));
-
-/// Keeps `node` from overtaking its predecessor: if the step that moved it from `from` to its
-/// current position crossed the predecessor's wall from behind to ahead, the node is put back on
-/// the wall and the forward part of its velocity is dropped (a perfectly inelastic stop). A node
-/// that was already ahead (the pointer just reversed into the trail) is left alone — that is a
-/// legitimate hairpin, and the springs bring it round.
+/// The chain of nodes behind the pointer. GPU-free so the physics is unit-testable, and public
+/// so `examples/dump_trail_trace.rs` can record the reference trace that the TypeScript mirror
+/// (`src/lib/trail.ts`, used by the Studio live preview) is tested against.
 ///
-/// Without this rule momentum carries the spring nodes straight through the pointer whenever it
-/// stops or turns, which drew a loop or a stub in front of the cursor.
-fn block_overtake(from: (f32, f32), node: &mut TrailNode, wall: Wall) {
-    let ((wx, wy), (ux, uy)) = wall;
-    let before = (from.0 - wx) * ux + (from.1 - wy) * uy;
-    let after = (node.x - wx) * ux + (node.y - wy) * uy;
-    if before <= 0.0 && after > 0.0 {
-        let push_back = after + OVERTAKE_MARGIN;
-        node.x -= ux * push_back;
-        node.y -= uy * push_back;
-        let v_along = node.vx * ux + node.vy * uy;
-        if v_along > 0.0 {
-            node.vx -= ux * v_along;
-            node.vy -= uy * v_along;
-        }
-    }
-}
-
-/// The chain of nodes behind the pointer. GPU-free so the physics is unit-testable.
-///
-/// * Node 0 (head) is a first-order follower of the jitter-filtered pointer: `head_spring` is
-///   the follow strength, `head_damping` the pointer smoothing.
-/// * Nodes `1..lead_nodes` are pursuit followers of their predecessor with the same strength,
-///   so the front of the ribbon is a calm pursuit curve that never whips.
+/// * The raw pointer first passes through an optional **LazyBrush** dead-zone filter
+///   (`lazy_enabled`/`lazy_radius`/`lazy_friction`, TD-style) producing the brush target.
+/// * Node 0 (head) is a 2nd-order spring-damper toward that brush (Windhawk
+///   `ApplyTrailPhysicsSegment`: `v += gap×k×dt_scale; v *= fric; p += v×dt_scale`).
 /// * The remaining nodes form a spring-damper chain (forward Gauss-Seidel pass with a 0.3×
 ///   second-neighbour coupling that keeps sharp turns from kinking). Springs scale linearly
 ///   with the time step and friction exponentially, so the feel is frame-rate independent.
-/// * Every node obeys [`block_overtake`] against its predecessor (the raw pointer for node 0).
+/// * After each step a clamped distance constraint (TD) pulls any gap larger than
+///   [`MAX_NODE_GAP`] back in — a **teleport guard only** (the limit sits far above the
+///   chain's natural steady-state gap so normal motion never touches it), applied
+///   inelastically so it cannot inject speed into a flick.
 #[derive(Debug, Default)]
-struct TrailChain {
+pub struct TrailChain {
     nodes: Vec<TrailNode>,
-    /// Jitter-filtered pointer position that the head follows.
-    head_target: (f32, f32),
-    head_target_valid: bool,
-    /// Pointer position at the previous frame and its last significant direction of motion.
-    last_cursor: (f32, f32),
-    cursor_dir: (f32, f32),
+    /// LazyBrush position (equals the pointer when `lazy_enabled` is off).
+    brush: (f32, f32),
+    brush_valid: bool,
+    /// The LazyBrush moved during the last step (still catching up with the pointer).
+    brush_moving: bool,
 }
 
 impl TrailChain {
-    fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(capacity),
             ..Default::default()
         }
     }
 
+    /// Node positions and speeds, head first: `(x, y, speed px per 1/120 s)`.
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = (f32, f32, f32)> + '_ {
+        self.nodes.iter().map(|n| (n.x, n.y, n.speed))
+    }
+
+    /// Current LazyBrush position (the pointer itself when the brush is off).
+    pub fn brush(&self) -> (f32, f32) {
+        self.brush
+    }
+
     /// Grows the chain from its tail (new nodes start on the last node, or on the pointer when
     /// the chain is empty) or truncates it.
-    fn resize(&mut self, len: usize, x: f32, y: f32) {
+    pub fn resize(&mut self, len: usize, x: f32, y: f32) {
         self.nodes.truncate(len);
         while self.nodes.len() < len {
             let seed = self.nodes.last().copied().unwrap_or(TrailNode {
@@ -277,68 +272,106 @@ impl TrailChain {
         }
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.nodes.clear();
-        self.head_target_valid = false;
-        self.cursor_dir = (0.0, 0.0);
+        self.brush_valid = false;
+        self.brush_moving = false;
     }
 
-    fn is_moving(&self) -> bool {
-        self.nodes.iter().any(|n| n.speed > MIN_DIRECTION_SPEED)
+    /// Still in motion: a node is moving, the head has not reached the brush yet (a 1 px nudge
+    /// from rest gives the head a speed below the threshold, so speed alone parked the loop with
+    /// the head off the cursor), or the LazyBrush is still being dragged.
+    pub fn is_moving(&self) -> bool {
+        let head_away = self.nodes.first().is_some_and(|h| {
+            (h.x - self.brush.0).abs() > HEAD_REST_DISTANCE
+                || (h.y - self.brush.1).abs() > HEAD_REST_DISTANCE
+        });
+        self.brush_moving || head_away || self.nodes.iter().any(|n| n.speed > MIN_DIRECTION_SPEED)
     }
 
     /// Advances the chain by one frame of `dt` seconds toward the pointer at `(x, y)`.
     ///
-    /// Fixed sub-stepping: explicit Euler springs scaled by a large frame delta diverge at low
-    /// frame rates, so the chain is integrated in slices of at most [`PHYSICS_TICK`].
-    fn advance(&mut self, x: f32, y: f32, dt: f32, config: &AppConfig) {
+    /// Sub-stepping: explicit Euler springs scaled by a large frame delta diverge at low frame
+    /// rates, so the frame is split into `ceil(dt / PHYSICS_TICK)` equal slices of at most
+    /// [`PHYSICS_TICK`] (equal slices, not a fixed-rate accumulator: with vsync pacing `dt` is
+    /// steady, and there is no render-side interpolation to feed).
+    pub fn advance(&mut self, x: f32, y: f32, dt: f32, config: &AppConfig) {
         if self.nodes.is_empty() {
             return;
         }
-        if !self.head_target_valid {
-            self.head_target = (x, y);
-            self.last_cursor = (x, y);
-            self.head_target_valid = true;
+        if !self.brush_valid {
+            self.brush = (x, y);
+            self.brush_valid = true;
         }
-        if let Some(dir) = motion_dir(x - self.last_cursor.0, y - self.last_cursor.1, MIN_DIRECTION_SPEED) {
-            self.cursor_dir = dir;
+        if !config.trail.lazy_enabled {
+            self.brush = (x, y);
         }
-        let substeps = ((dt / PHYSICS_TICK).ceil() as usize).clamp(1, MAX_SUBSTEPS);
+        // The small epsilon keeps an exact multiple of the tick from rounding up to one extra
+        // slice (in f32, (1/60)/(1/120) can come out as 2.0000002).
+        let substeps = ((dt / PHYSICS_TICK - 1e-3).ceil() as usize).clamp(1, MAX_SUBSTEPS);
         let sdt = dt / substeps as f32;
+        self.brush_moving = false;
         for _ in 0..substeps {
             self.step(x, y, sdt, config);
         }
-        self.last_cursor = (x, y);
+        // A non-finite value (imported config, extreme spring) would otherwise poison the chain
+        // for good: NaN speeds read as "at rest", so the loop parks on garbage. Start over.
+        if !self.nodes.iter().all(|n| n.x.is_finite() && n.y.is_finite() && n.speed.is_finite()) {
+            let len = self.nodes.len();
+            self.reset();
+            self.resize(len, x, y);
+        }
     }
 
     /// One physics slice (`sdt` seconds, at most [`PHYSICS_TICK`]).
     fn step(&mut self, x: f32, y: f32, sdt: f32, config: &AppConfig) {
         let dt_scale = (sdt / REFERENCE_FRAME).clamp(0.01, 5.0);
+
+        // 1. LazyBrush dead zone — dt-scaled factor keeps the pull frame-rate independent.
+        if config.trail.lazy_enabled {
+            let dx = x - self.brush.0;
+            let dy = y - self.brush.1;
+            let dist = (dx * dx + dy * dy).sqrt();
+            // TD: round((dist - radius)*10)/10 > 0 → 0.1 px quantisation avoids float jitter.
+            let excess = dist - config.trail.lazy_radius;
+            if dist > 1e-4 && (excess * 10.0).round() / 10.0 > 0.0 {
+                let f = lazy_brush_factor(config.trail.lazy_friction);
+                let factor = 1.0 - (1.0 - f).powf(dt_scale);
+                let pull = excess * factor;
+                self.brush.0 += dx / dist * pull;
+                self.brush.1 += dy / dist * pull;
+                self.brush_moving = true;
+            }
+        } else {
+            self.brush = (x, y);
+        }
+
+        let head_spring = config.trail.head_spring / 1000.0;
+        let head_fric = (1.0 - config.trail.head_damping / 100.0)
+            .clamp(0.01, 1.0)
+            .powf(dt_scale);
         let body_spring = config.trail.spring / 1000.0;
-        let body_fric = (1.0 - config.trail.damping / 100.0).clamp(0.01, 1.0).powf(dt_scale);
-        let lead = (config.trail.lead_nodes.max(1) as usize).min(self.nodes.len());
+        let body_fric =
+            (1.0 - config.trail.damping / 100.0).clamp(0.01, 1.0).powf(dt_scale);
 
-        let smoothing = (config.trail.head_damping / 100.0).clamp(0.0, 0.95);
-        let target_blend = 1.0 - smoothing.powf(dt_scale);
-        self.head_target.0 += (x - self.head_target.0) * target_blend;
-        self.head_target.1 += (y - self.head_target.1) * target_blend;
-        let follow = (config.trail.head_spring / 100.0).clamp(0.05, 0.98);
-        let a = 1.0 - (1.0 - follow).powf(dt_scale);
+        // 2. Head: 2nd-order spring-damper toward the brush (Windhawk ApplyTrailPhysicsSegment).
+        {
+            let brush = self.brush;
+            let cur = &mut self.nodes[0];
+            cur.vx += (brush.0 - cur.x) * head_spring * dt_scale;
+            cur.vy += (brush.1 - cur.y) * head_spring * dt_scale;
+            cur.vx *= head_fric;
+            cur.vy *= head_fric;
+            cur.x += cur.vx * dt_scale;
+            cur.y += cur.vy * dt_scale;
+            cur.finish_step();
+        }
 
-        let cursor_wall = (self.cursor_dir != (0.0, 0.0)).then_some(((x, y), self.cursor_dir));
-        let target = self.head_target;
-        Self::follow_step(&mut self.nodes[0], target, a, cursor_wall, dt_scale);
-
+        // 3. Body: Windhawk chain (0.3 second-neighbour coupling).
         for i in 1..self.nodes.len() {
             let prev = self.nodes[i - 1];
-            let wall = (prev.dir != (0.0, 0.0)).then_some(((prev.x, prev.y), prev.dir));
-            if i < lead {
-                Self::follow_step(&mut self.nodes[i], (prev.x, prev.y), a, wall, dt_scale);
-                continue;
-            }
             let second = (i > 1).then(|| self.nodes[i - 2]);
             let cur = &mut self.nodes[i];
-            let from = (cur.x, cur.y);
             if let Some(pp) = second {
                 cur.vx += (pp.x - cur.x) * body_spring * 0.3 * dt_scale;
                 cur.vy += (pp.y - cur.y) * body_spring * 0.3 * dt_scale;
@@ -349,25 +382,35 @@ impl TrailChain {
             cur.vy *= body_fric;
             cur.x += cur.vx * dt_scale;
             cur.y += cur.vy * dt_scale;
-            if let Some(wall) = wall {
-                block_overtake(from, cur, wall);
-            }
-            cur.finish_step(from);
+            cur.finish_step();
         }
-    }
 
-    /// First-order pursuit toward `target`: always lands between the old position and the
-    /// target, so it can never overshoot. Velocity is derived from the actual displacement.
-    fn follow_step(node: &mut TrailNode, target: (f32, f32), a: f32, wall: Option<Wall>, dt_scale: f32) {
-        let from = (node.x, node.y);
-        node.x += (target.0 - node.x) * a;
-        node.y += (target.1 - node.y) * a;
-        if let Some(wall) = wall {
-            block_overtake(from, node, wall);
+        // 4. Clamped distance constraint, head→tail (TD trail-system.js, clamped mode).
+        // Position is pulled back only, and only separating velocity is stripped — the clamp
+        // is inelastic. TD adds the full correction into `dx` at a fixed 60 Hz; re-applying
+        // that on the next sub-step (and every frame the gap stays above the limit during a
+        // flick) slingshots the follower forward, which reads as the trail accelerating.
+        for i in 1..self.nodes.len() {
+            let prev = self.nodes[i - 1];
+            let cur = &mut self.nodes[i];
+            let dx = cur.x - prev.x;
+            let dy = cur.y - prev.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            // MAX_NODE_GAP ≫ 0, so this also guarantees dist is safe to divide by.
+            if dist > MAX_NODE_GAP {
+                let ratio = MAX_NODE_GAP / dist;
+                let nx = dx / dist;
+                let ny = dy / dist;
+                let vn = cur.vx * nx + cur.vy * ny;
+                if vn > 0.0 {
+                    cur.vx -= vn * nx;
+                    cur.vy -= vn * ny;
+                }
+                cur.x = prev.x + dx * ratio;
+                cur.y = prev.y + dy * ratio;
+                cur.finish_step();
+            }
         }
-        node.vx = (node.x - from.0) / dt_scale;
-        node.vy = (node.y - from.1) / dt_scale;
-        node.finish_step(from);
     }
 }
 
@@ -400,6 +443,8 @@ struct Particle {
     color: [f32; 4],
 }
 
+/// Velocity-squished head blob (Windhawk `UpdateSquishyCursor`).
+#[derive(Debug, Default)]
 struct SquishyState {
     pos_x: f32,
     pos_y: f32,
@@ -409,6 +454,60 @@ struct SquishyState {
     current_angle: f32,
     target_scale: f32,
     target_angle: f32,
+    /// False until the first step (or after a reset): the head then starts on the pointer
+    /// instead of flying in from the origin.
+    initialized: bool,
+}
+
+impl SquishyState {
+    /// One frame of the Windhawk squishy head.
+    ///
+    /// The blob eases toward the pointer with `1 - (1 - s)^dt_scale` (exponential, so the
+    /// feel is frame-rate independent), and its squish comes from the eased head's speed in
+    /// **px per reference frame**. Measuring in px/s (as V4 did before) made
+    /// `min(v × 8, 200)` saturate at ~25 px/s, so the head sat fully squashed on any motion.
+    fn step(&mut self, x: f32, y: f32, dt_scale: f32, config: &AppConfig) {
+        if !self.initialized {
+            *self = SquishyState {
+                pos_x: x,
+                pos_y: y,
+                prev_x: x,
+                prev_y: y,
+                initialized: true,
+                ..Default::default()
+            };
+        }
+        let smoothing = (config.head.squish_smoothing / 100.0).clamp(0.01, 1.0);
+        let adaptive = 1.0 - (1.0 - smoothing).powf(dt_scale);
+
+        self.pos_x += (x - self.pos_x) * adaptive;
+        self.pos_y += (y - self.pos_y) * adaptive;
+        let dx = self.pos_x - self.prev_x;
+        let dy = self.pos_y - self.prev_y;
+        let velocity = (dx * dx + dy * dy).sqrt() / dt_scale;
+        self.prev_x = self.pos_x;
+        self.prev_y = self.pos_y;
+
+        let intensity = config.head.squish_intensity / 100.0;
+        let amplified = (velocity * 8.0).min(200.0);
+        self.target_scale = (amplified / 15.0) * intensity;
+        self.current_scale += (self.target_scale - self.current_scale) * adaptive;
+
+        if velocity > 0.5 {
+            self.target_angle = dy.atan2(dx);
+        }
+        let angle_diff = (self.target_angle - self.current_angle + std::f32::consts::PI)
+            .rem_euclid(std::f32::consts::TAU)
+            - std::f32::consts::PI;
+        self.current_angle += angle_diff * adaptive;
+    }
+
+    /// Still easing toward the pointer or changing shape.
+    fn is_animating(&self, pointer: (f32, f32)) -> bool {
+        (self.current_scale - self.target_scale).abs() > 0.001
+            || (self.pos_x - pointer.0).abs() > 0.05
+            || (self.pos_y - pointer.1).abs() > 0.05
+    }
 }
 
 struct SatelliteState {
@@ -466,12 +565,16 @@ fn lerp_rgba(c0: [f32; 4], c1: [f32; 4], t: f32) -> [f32; 4] {
     ]
 }
 
+/// Head-to-tail falloff: 0 Linear, 1 Ease Out, 2 Exponential, 3 Sigmoid (Windhawk's four),
+/// 4 Smoothstep (flat at both ends). Unknown modes fall back to linear.
 fn apply_fade_curve(progress: f32, mode: u32) -> f32 {
+    let p = progress.clamp(0.0, 1.0);
     match mode {
-        1 => 1.0 - progress * progress,
-        2 => (-progress * 3.0).exp(),
-        3 => 1.0 / (1.0 + (8.0 * (progress - 0.5)).exp()),
-        _ => 1.0 - progress,
+        1 => 1.0 - p * p,
+        2 => (-p * 3.0).exp(),
+        3 => 1.0 / (1.0 + (8.0 * (p - 0.5)).exp()),
+        4 => 1.0 - p * p * (3.0 - 2.0 * p),
+        _ => 1.0 - p,
     }
 }
 
@@ -502,10 +605,10 @@ fn catmull_rom(
 
 /// Centripetal Catmull-Rom (α = 0.5, Barry–Goldman form) evaluated between `p1` and `p2`.
 ///
-/// Spring nodes bunch up on reversals and the cursor can be far ahead of the first node, so
-/// the control points are very unevenly spaced; the uniform spline then loops and hooks (the
-/// classic "curl at the head"). The centripetal parametrisation has no cusps or
-/// self-intersections within a segment for any spacing.
+/// Spring nodes bunch up on reversals and can be very unevenly spaced after LazyBrush lag or a
+/// hard stop; the uniform spline then loops and hooks (the classic "curl at the head"). The
+/// centripetal parametrisation has no cusps or self-intersections within a segment for any
+/// spacing.
 fn catmull_rom_centripetal(
     p0: (f32, f32),
     p1: (f32, f32),
@@ -552,8 +655,11 @@ const MIN_SAMPLE_SPACING: f32 = 3.0;
 const MAX_SAMPLE_SPACING: f32 = 24.0;
 /// Capsules whose both ends are fainter than this are skipped entirely.
 const MIN_VISIBLE_ALPHA: f32 = 0.004;
-/// Physics reference frame (the spring/damping settings are expressed per 60 Hz frame).
-const REFERENCE_FRAME: f32 = 1.0 / 60.0;
+/// Physics reference frame. Windhawk (`kReferenceFrameTime`) and V3 both use **1/120 s**:
+/// `dt_scale = dt / REFERENCE_FRAME`, spring forces scale by `dt_scale`, friction as
+/// `fric.powf(dt_scale)`. Using 1/60 here halved every spring impulse per second and softened
+/// friction — the trail then lagged far behind legacy and felt slow / uneven.
+const REFERENCE_FRAME: f32 = 1.0 / 120.0;
 /// Largest integration slice for the spring chain; longer frames are sub-stepped.
 const PHYSICS_TICK: f32 = 1.0 / 120.0;
 const MAX_SUBSTEPS: usize = 16;
@@ -585,29 +691,40 @@ const QUAD_VERTICES: [[f32; 2]; 6] = [
 /// Resamples the spring-chain nodes into a smooth Catmull-Rom centerline.
 ///
 /// Near-coincident nodes are merged first (they appear when the cursor stops or reverses), and
-/// each spline segment is subdivided proportionally to its length when `adaptive_quality` is on.
+/// each spline segment is subdivided by curvature when `adaptive_quality` is on.
+///
+/// `progress` follows the **original node index** (`(i + t) / (N − 1)`), exactly like every
+/// legacy implementation (Windhawk D3D/GDI+, V3, TD). Width, fade and blur are therefore tied to
+/// the chain itself: after a stop the nodes reel in one by one and the visible trail retracts
+/// into the cursor. An arc-length parameterisation (tried in session 9) keeps the trail at full
+/// length until the tail arrives and makes the whole ribbon "breathe" whenever its total length
+/// changes. Using the index of the *merged* points instead (the pre-session-9 bug) would stretch
+/// the taper over whatever nodes survive the merge, so merged nodes keep their original index.
 pub fn build_samples(nodes: &[(f32, f32, f32)], config: &AppConfig, out: &mut Vec<Sample>) {
     out.clear();
+    let total = nodes.len();
+    if total == 0 {
+        return;
+    }
+    let index_scale = 1.0 / (total - 1).max(1) as f32;
 
-    // 1. Merge near-duplicate nodes (x, y, speed).
-    let mut pts: Vec<(f32, f32, f32)> = Vec::with_capacity(nodes.len());
-    for &(x, y, speed) in nodes {
-        if let Some(&(px, py, _)) = pts.last() {
+    // 1. Merge near-duplicate nodes: (x, y, speed, original index).
+    let mut pts: Vec<(f32, f32, f32, f32)> = Vec::with_capacity(total);
+    for (i, &(x, y, speed)) in nodes.iter().enumerate() {
+        if let Some(&(px, py, _, _)) = pts.last() {
             let dx = x - px;
             let dy = y - py;
             if dx * dx + dy * dy < MIN_NODE_SPACING * MIN_NODE_SPACING {
                 continue;
             }
         }
-        pts.push((x, y, speed));
+        pts.push((x, y, speed, i as f32));
     }
 
     let n = pts.len();
-    if n == 0 {
-        return;
-    }
     if n == 1 {
-        let (x, y, speed) = pts[0];
+        // Collapsed chain (cursor at rest): a single point, drawn as a round dot.
+        let (x, y, speed, _) = pts[0];
         out.push(Sample {
             x,
             y,
@@ -618,14 +735,24 @@ pub fn build_samples(nodes: &[(f32, f32, f32)], config: &AppConfig, out: &mut Ve
     }
 
     // Phantom control points mirrored past both ends so the drawn curve runs from the very
-    // first point (the cursor) to the very last node instead of skipping them.
+    // first point (the spring head) to the very last node instead of skipping them.
     let first = pts[0];
     let second = pts[1];
     let last = pts[n - 1];
     let before_last = pts[n - 2];
-    let phantom_start = (2.0 * first.0 - second.0, 2.0 * first.1 - second.1, first.2);
-    let phantom_end = (2.0 * last.0 - before_last.0, 2.0 * last.1 - before_last.1, last.2);
-    let ctrl = |i: isize| -> (f32, f32, f32) {
+    let phantom_start = (
+        2.0 * first.0 - second.0,
+        2.0 * first.1 - second.1,
+        first.2,
+        first.3,
+    );
+    let phantom_end = (
+        2.0 * last.0 - before_last.0,
+        2.0 * last.1 - before_last.1,
+        last.2,
+        last.3,
+    );
+    let ctrl = |i: isize| -> (f32, f32, f32, f32) {
         if i < 0 {
             phantom_start
         } else if i as usize >= n {
@@ -635,10 +762,10 @@ pub fn build_samples(nodes: &[(f32, f32, f32)], config: &AppConfig, out: &mut Ve
         }
     };
 
-    let base_steps = config.trail.interpolation_steps.max(1) as usize;
-    let total_segments = n - 1;
+    // Bounded like the adaptive path: the UI offers 1–10, an imported config could ask for more.
+    let base_steps = config.trail.interpolation_steps.clamp(1, 32) as usize;
 
-    for seg in 0..total_segments {
+    for seg in 0..(n - 1) {
         let c0 = ctrl(seg as isize - 1);
         let c1 = ctrl(seg as isize);
         let c2 = ctrl(seg as isize + 1);
@@ -647,8 +774,8 @@ pub fn build_samples(nodes: &[(f32, f32, f32)], config: &AppConfig, out: &mut Ve
         let p1 = (c1.0, c1.1);
         let p2 = (c2.0, c2.1);
         let p3 = (c3.0, c3.1);
-        let sp1 = c1.2;
-        let sp2 = c2.2;
+        let (sp1, sp2) = (c1.2, c2.2);
+        let (i1, i2) = (c1.3, c2.3);
 
         let seg_dist = ((p2.0 - p1.0).powi(2) + (p2.1 - p1.1).powi(2)).sqrt();
         let steps = if config.trail.adaptive_quality {
@@ -670,17 +797,16 @@ pub fn build_samples(nodes: &[(f32, f32, f32)], config: &AppConfig, out: &mut Ve
                 x,
                 y,
                 speed: sp1 + (sp2 - sp1) * t,
-                progress: (seg as f32 + t) / total_segments as f32,
+                progress: (i1 + (i2 - i1) * t) * index_scale,
             });
         }
     }
     // Close the curve at the last node so the tail cap sits on the final point.
-    let last = pts[n - 1];
     out.push(Sample {
         x: last.0,
         y: last.1,
         speed: last.2,
-        progress: 1.0,
+        progress: last.3 * index_scale,
     });
 }
 
@@ -694,6 +820,9 @@ fn layer_sample_style(
     gradient: bool,
 ) -> ([f32; 4], f32) {
     let fade = apply_fade_curve(s.progress, config.trail.fade_mode);
+    // `speed` is px per REFERENCE_FRAME (1/120 s). Windhawk D3D/GDI+ and V3 all normalise by
+    // 20 in these same units (saturating at 2400 px/s); /10 doubled the boost at normal speed
+    // and made the ribbon look fat and pulsing.
     let norm_speed = (s.speed / 20.0).min(1.0);
     let vel_width = 1.0 + norm_speed * config.trail.velocity_width_mult;
     let vel_alpha = 1.0 + norm_speed * config.trail.velocity_alpha_mult;
@@ -717,6 +846,10 @@ pub const UNBOUNDED_VIEWPORT: Viewport = (-1.0e9, -1.0e9, 2.0e9, 2.0e9);
 
 /// Appends one capsule per consecutive sample pair for `layer`, skipping capsules that are
 /// invisible (both ends fainter than [`MIN_VISIBLE_ALPHA`]) or entirely outside `viewport`.
+///
+/// A single sample (chain collapsed on a resting cursor) becomes one zero-length capsule, i.e.
+/// a round dot. Windhawk keeps that 4-layer dot at rest too; emitting nothing made the ribbon
+/// pop in and out depending on whether the nodes had merged when the render loop parked.
 pub fn build_layer_capsules(
     samples: &[Sample],
     layer_index: usize,
@@ -726,9 +859,16 @@ pub fn build_layer_capsules(
     viewport: Viewport,
     dst: &mut Vec<CapsuleInstance>,
 ) {
-    if !layer.enabled || samples.len() < 2 {
+    if !layer.enabled || samples.is_empty() {
         return;
     }
+    let dot;
+    let samples = if samples.len() == 1 {
+        dot = [samples[0], samples[0]];
+        &dot[..]
+    } else {
+        samples
+    };
     let (vx, vy, vw, vh) = viewport;
     let (vx1, vy1) = (vx + vw, vy + vh);
 
@@ -779,14 +919,15 @@ pub fn build_layer_capsules(
             continue;
         }
 
-        let blur = layer.start_blur + (layer.end_blur - layer.start_blur) * a.progress;
+        // Blur ramps per vertex like Windhawk's HLSL (interpolated along the capsule in WGSL).
+        let blur_at = |p: f32| (layer.start_blur + (layer.end_blur - layer.start_blur) * p).clamp(0.0, 1.0);
         dst.push(CapsuleInstance {
             a: [a.x, a.y],
             b: [b.x, b.y],
             radii: [ra, rb],
             color_a: ca,
             color_b: cb,
-            params: [blur.clamp(0.0, 1.0), layer_index as f32, i as f32, 0.0],
+            params: [blur_at(a.progress), layer_index as f32, i as f32, blur_at(b.progress)],
         });
     }
 }
@@ -802,13 +943,24 @@ pub struct OverlayRenderer {
     capsule_prepass_pipeline: RenderPipeline,
     capsule_color_pipeline: RenderPipeline,
     circle_pipeline: RenderPipeline,
+    cursor_pipeline: RenderPipeline,
+    cursor_bind_layout: BindGroupLayout,
+    cursor_sampler: Sampler,
     uniform_buffer: Buffer,
     bind_group: BindGroup,
     quad_vertex_buffer: Buffer,
+    cursor_vertex_buffer: Buffer,
     capsule_instance_buffer: Buffer,
     circle_instance_buffer: Buffer,
     quad_initialized: bool,
-    depth: Option<DepthTarget>,
+    /// Depth attachments by size, most recently used first (see `ensure_depth`).
+    depth: Vec<DepthTarget>,
+    /// Uploaded OS cursor shape (GPU bypass); `None` while the feature is off or extraction
+    /// has not produced a shape yet.
+    cursor_shape: Option<BoundCursorShape>,
+    /// False while the OS hides its pointer (fullscreen video, typing): the copy hides too.
+    cursor_visible: bool,
+    gpu_cursor: GpuCursorState,
 
     chain: TrailChain,
     node_scratch: Vec<(f32, f32, f32)>,
@@ -818,8 +970,9 @@ pub struct OverlayRenderer {
     squishy: SquishyState,
     satellites: SatelliteState,
 
+    /// Raw pointer position of the last `update_mouse` call (satellites orbit it).
     last_mouse_pos: (f32, f32),
-    /// Jitter-filtered cursor position the head node follows (see `step_chain`).
+    /// Xorshift state for the particle jitter.
     rng_seed: u32,
     rainbow_hue: f32,
     start_time: Instant,
@@ -833,6 +986,16 @@ pub struct OverlayRenderer {
     hud_fps: f32,
     /// Rectangle the HUD is anchored to (world pixels); `None` = the current viewport.
     pub hud_rect: Option<(f32, f32, f32, f32)>,
+}
+
+/// GPU-resident copy of an extracted OS cursor shape, keyed by its source handle.
+struct BoundCursorShape {
+    key: isize,
+    width: u32,
+    height: u32,
+    hotspot: (u32, u32),
+    is_arrow: bool,
+    bind_group: BindGroup,
 }
 
 impl OverlayRenderer {
@@ -1078,9 +1241,101 @@ impl OverlayRenderer {
             cache: None,
         });
 
+        // ---- GPU cursor bypass: textured quad drawn last, on top of everything -------------
+        let cursor_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("cursor_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let cursor_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("cursor_pipeline_layout"),
+                bind_group_layouts: &[Some(&bind_group_layout), Some(&cursor_bind_layout)],
+                immediate_size: 0,
+            });
+        let cursor_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("cursor_pipeline"),
+            layout: Some(&cursor_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_cursor"),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<CursorVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 8,
+                            shader_location: 1,
+                        },
+                    ],
+                })],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_cursor"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(blend_state),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive,
+            // On-top sprite: ignore depth/stencil, same declaration as the SDF billboards.
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let cursor_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("cursor_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
         let quad_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("quad_vertex_buffer"),
             size: (std::mem::size_of::<[f32; 2]>() * 6) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let cursor_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cursor_vertex_buffer"),
+            size: (std::mem::size_of::<CursorVertex>() * 6) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1103,13 +1358,20 @@ impl OverlayRenderer {
             capsule_prepass_pipeline,
             capsule_color_pipeline,
             circle_pipeline,
+            cursor_pipeline,
+            cursor_bind_layout,
+            cursor_sampler,
             uniform_buffer,
             bind_group,
             quad_vertex_buffer,
+            cursor_vertex_buffer,
             capsule_instance_buffer,
             circle_instance_buffer,
             quad_initialized: false,
-            depth: None,
+            depth: Vec::with_capacity(2),
+            cursor_shape: None,
+            cursor_visible: true,
+            gpu_cursor: GpuCursorState::default(),
             chain: TrailChain::with_capacity(160),
             hud_fps: 0.0,
             hud_rect: None,
@@ -1117,16 +1379,7 @@ impl OverlayRenderer {
             samples: Vec::with_capacity(4096),
             ripples: Vec::with_capacity(32),
             particles: Vec::with_capacity(256),
-            squishy: SquishyState {
-                pos_x: 0.0,
-                pos_y: 0.0,
-                prev_x: 0.0,
-                prev_y: 0.0,
-                current_scale: 0.0,
-                current_angle: 0.0,
-                target_scale: 0.0,
-                target_angle: 0.0,
-            },
+            squishy: SquishyState::default(),
             satellites: SatelliteState {
                 angle: 0.0,
                 mirror_angle: 0.0,
@@ -1147,6 +1400,9 @@ impl OverlayRenderer {
     pub fn spawn_click(&mut self, button: usize, x: f32, y: f32, config: &AppConfig) {
         if !config.enabled {
             return;
+        }
+        if config.gpu_cursor.enabled {
+            self.gpu_cursor.spawn_bounce();
         }
         let mask = ModeMask::from_mode(config.effect_mode);
         if config.ripple.enabled && mask.ripples {
@@ -1194,7 +1450,8 @@ impl OverlayRenderer {
     /// Advances all simulations by `delta_seconds` towards cursor position `(x, y)`.
     pub fn update_mouse(&mut self, x: f32, y: f32, delta_seconds: f32, config: &AppConfig) {
         // Hitches up to 100 ms are integrated in full (sub-stepped) so the trail catches up
-        // instead of falling behind the pointer; anything longer is treated as a pause.
+        // instead of falling behind the pointer; a longer gap only integrates 100 ms of it
+        // (the render loop already caps the first frame after an idle park to one period).
         let dt = delta_seconds.clamp(0.001, MAX_FRAME_DELTA);
 
         for r in &mut self.ripples {
@@ -1233,31 +1490,25 @@ impl OverlayRenderer {
         let dt_scale = (dt / REFERENCE_FRAME).clamp(0.1, 5.0);
 
         if config.head.enabled {
-            let dx = x - self.squishy.prev_x;
-            let dy = y - self.squishy.prev_y;
-            let velocity = (dx * dx + dy * dy).sqrt() / dt.max(0.001);
-            let intensity = config.head.squish_intensity / 100.0;
-            let amplified = (velocity * 8.0).min(200.0);
-            self.squishy.target_scale = (amplified / 15.0) * intensity;
-            let smoothing = (config.head.squish_smoothing / 100.0).clamp(0.01, 1.0);
-            let adaptive_smoothing = (smoothing * dt_scale).clamp(0.0, 1.0);
-            self.squishy.current_scale += (self.squishy.target_scale - self.squishy.current_scale) * adaptive_smoothing;
+            self.squishy.step(x, y, dt_scale, config);
+        } else {
+            self.squishy.initialized = false;
+        }
 
-            if velocity > 0.5 {
-                self.squishy.target_angle = dy.atan2(dx);
-            }
-            let mut angle_diff = self.squishy.target_angle - self.squishy.current_angle;
-            while angle_diff > std::f32::consts::PI {
-                angle_diff -= std::f32::consts::TAU;
-            }
-            while angle_diff < -std::f32::consts::PI {
-                angle_diff += std::f32::consts::TAU;
-            }
-            self.squishy.current_angle += angle_diff * adaptive_smoothing;
-            self.squishy.pos_x = x;
-            self.squishy.pos_y = y;
-            self.squishy.prev_x = x;
-            self.squishy.prev_y = y;
+        // GPU cursor bypass: chase the travel direction with the arrow and run down the
+        // click bump. Uses the previous pointer position, so it must run before
+        // `last_mouse_pos` is overwritten below.
+        if config.enabled && config.gpu_cursor.enabled {
+            let is_arrow = self.cursor_shape.as_ref().map(|s| s.is_arrow).unwrap_or(true);
+            self.gpu_cursor.update(
+                x - self.last_mouse_pos.0,
+                y - self.last_mouse_pos.1,
+                dt,
+                config.gpu_cursor.rotate_with_movement && is_arrow,
+                config.gpu_cursor.rotation_smoothing,
+            );
+        } else {
+            self.gpu_cursor.reset();
         }
 
         self.last_mouse_pos = (x, y);
@@ -1273,21 +1524,27 @@ impl OverlayRenderer {
             || !self.ripples.is_empty()
             || !self.particles.is_empty()
             || (mask.trail && self.chain.is_moving())
-            || (config.head.enabled
-                && mask.head
-                && (self.squishy.current_scale - self.squishy.target_scale).abs() > 0.001)
+            || (config.head.enabled && mask.head && self.squishy.is_animating(self.last_mouse_pos))
+            // GPU cursor: rotation easing and the click bump must finish before parking.
+            || (config.gpu_cursor.enabled
+                && self
+                    .gpu_cursor
+                    .is_animating(config.gpu_cursor.click_scale_duration_ms))
     }
 
-    /// (Re)creates the depth attachment when the surface size changes, clamped to GPU limits.
+    /// Moves a depth attachment of exactly `width × height` to the front of the cache, creating
+    /// it if needed. Two sizes are kept (the overlay surface and the snapshot crop), so a
+    /// capture burst no longer reallocates the full-desktop depth buffer twice per frame —
+    /// that hitch distorted exactly the transients a burst is meant to record.
     fn ensure_depth(&mut self, device: &Device, width: u32, height: u32) {
-        let max_dim = device.limits().max_texture_dimension_2d;
-        let width = width.clamp(1, max_dim);
-        let height = height.clamp(1, max_dim);
-        let needs_new = match &self.depth {
-            Some(d) => d.width != width || d.height != height,
-            None => true,
-        };
-        if !needs_new {
+        let width = width.max(1);
+        let height = height.max(1);
+        if let Some(i) = self
+            .depth
+            .iter()
+            .position(|d| d.width == width && d.height == height)
+        {
+            self.depth.swap(0, i);
             return;
         }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1304,11 +1561,15 @@ impl OverlayRenderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        self.depth = Some(DepthTarget {
-            width,
-            height,
-            view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
-        });
+        self.depth.insert(
+            0,
+            DepthTarget {
+                width,
+                height,
+                view: texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            },
+        );
+        self.depth.truncate(2);
     }
 
     /// Rebuilds the centerline and the capsule list for every enabled layer.
@@ -1327,11 +1588,9 @@ impl OverlayRenderer {
         }
 
         self.node_scratch.clear();
-        // The centerline starts at the real cursor position so the front cap stays attached
-        // to the pointer; the spring head (node 0) becomes the second control point.
-        let head_speed = self.chain.nodes.first().map(|n| n.speed).unwrap_or(0.0);
-        self.node_scratch
-            .push((self.last_mouse_pos.0, self.last_mouse_pos.1, head_speed));
+        // Legacy (Windhawk / V3 / TD) builds the ribbon from the spring chain only.
+        // Prepending the raw pointer here stretched a full-width head capsule across
+        // the spring lag and produced a blob at the head.
         self.node_scratch
             .extend(self.chain.nodes.iter().map(|n| (n.x, n.y, n.speed)));
         build_samples(&self.node_scratch, config, &mut self.samples);
@@ -1553,13 +1812,43 @@ impl OverlayRenderer {
             );
         }
 
+        // ---- GPU cursor shape ---------------------------------------------------------------
+        // Built from `last_mouse_pos` + the current bounce/rotation state; drawn last so the
+        // cursor always sits on top of the trail and effects.
+        let cursor_draw = if config.enabled && config.gpu_cursor.enabled && self.cursor_visible {
+            self.cursor_shape.as_ref().map(|shape| {
+                let scale = self.gpu_cursor.bounce_scale(
+                    config.gpu_cursor.click_scale_percent,
+                    config.gpu_cursor.click_scale_duration_ms,
+                );
+                let rotation = if shape.is_arrow {
+                    self.gpu_cursor.rotation
+                } else {
+                    0.0
+                };
+                cursor_quad_vertices(
+                    self.last_mouse_pos,
+                    shape.width,
+                    shape.height,
+                    shape.hotspot,
+                    rotation,
+                    scale,
+                )
+            })
+        } else {
+            None
+        };
+        if let Some(vertices) = cursor_draw {
+            queue.write_buffer(&self.cursor_vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        }
+
         // ---- Render pass ------------------------------------------------------------------
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
         });
 
         {
-            let depth_view = &self.depth.as_ref().expect("depth target created above").view;
+            let depth_view = &self.depth[0].view; // `ensure_depth` above put this size first
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("overlay_rpass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1613,6 +1902,16 @@ impl OverlayRenderer {
                 rpass.set_vertex_buffer(1, self.circle_instance_buffer.slice(..));
                 rpass.draw(0..6, 0..num_circle_instances as u32);
             }
+
+            // 3. GPU cursor on top of everything (group 0 uniform bind stays valid).
+            if cursor_draw.is_some()
+                && let Some(shape) = &self.cursor_shape
+            {
+                rpass.set_pipeline(&self.cursor_pipeline);
+                rpass.set_vertex_buffer(0, self.cursor_vertex_buffer.slice(..));
+                rpass.set_bind_group(1, &shape.bind_group, &[]);
+                rpass.draw(0..6, 0..1);
+            }
         }
 
         queue.submit(std::iter::once(encoder.finish()));
@@ -1624,6 +1923,96 @@ impl OverlayRenderer {
     /// Updates the frame rate shown by the on-overlay HUD.
     pub fn set_hud_fps(&mut self, fps: f32) {
         self.hud_fps = if fps.is_finite() { fps } else { 0.0 };
+    }
+
+    /// Uploads an extracted OS cursor shape when its source handle (or size) changed.
+    /// Returns `true` if the GPU-side texture was replaced — the caller should then force
+    /// a few settle frames so a parked loop repaints with the new shape.
+    pub fn set_cursor_shape(&mut self, device: &Device, queue: &Queue, shape: &CursorShape) -> bool {
+        if shape.pixels.len() != (shape.width as usize) * (shape.height as usize) * 4 {
+            return false;
+        }
+        if let Some(bound) = &self.cursor_shape
+            && bound.key == shape.source_key
+            && bound.width == shape.width
+            && bound.height == shape.height
+            && bound.hotspot == shape.hotspot
+        {
+            return false;
+        }
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("cursor_shape_texture"),
+            size: wgpu::Extent3d {
+                width: shape.width.max(1),
+                height: shape.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            // Sampled in `fs_cursor` (TEXTURE_BINDING) and filled by `write_texture` (COPY_DST).
+            // Plain UNORM: the pixels are gamma-encoded and pre-multiplied, like the surface.
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &shape.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(shape.width.max(1) * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: shape.width.max(1),
+                height: shape.height.max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cursor_bind_group"),
+            layout: &self.cursor_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.cursor_sampler),
+                },
+            ],
+        });
+        self.cursor_shape = Some(BoundCursorShape {
+            key: shape.source_key,
+            width: shape.width,
+            height: shape.height,
+            hotspot: shape.hotspot,
+            is_arrow: shape.is_arrow,
+            bind_group,
+        });
+        true
+    }
+
+    /// Drops the uploaded cursor shape (feature disabled); the quad stops drawing.
+    /// Shows or hides the GPU cursor copy (mirrors the OS pointer visibility). Returns
+    /// `true` when the state changed, so the caller can schedule a repaint.
+    pub fn set_cursor_visible(&mut self, visible: bool) -> bool {
+        let changed = self.cursor_visible != visible;
+        self.cursor_visible = visible;
+        changed
+    }
+
+    pub fn clear_cursor_shape(&mut self) {
+        self.cursor_shape = None;
     }
 
     /// One-line description of the chain state relative to the pointer (diagnostics).
@@ -1644,23 +2033,23 @@ impl OverlayRenderer {
             .fold(0.0f32, f32::max);
         let moving = self.chain.nodes.iter().filter(|n| n.speed > MIN_DIRECTION_SPEED).count();
         format!(
-            "nodes={} first5={} farthest={farthest:.1} moving={moving} cursor_dir=({:.2},{:.2}) target=({:+.1},{:+.1})",
+            "nodes={} first5={} farthest={farthest:.1} moving={moving} brush=({:+.1},{:+.1})",
             self.chain.nodes.len(),
             offsets.join(" "),
-            self.chain.cursor_dir.0,
-            self.chain.cursor_dir.1,
-            self.chain.head_target.0 - cx,
-            self.chain.head_target.1 - cy
+            self.chain.brush.0 - cx,
+            self.chain.brush.1 - cy
         )
     }
 
     pub fn clear_active_state(&mut self) {
         self.chain.reset();
+        self.squishy.initialized = false;
         self.samples.clear();
         self.ripples.clear();
         self.particles.clear();
         self.capsules.clear();
         self.circle_instances.clear();
+        self.gpu_cursor.reset();
     }
 
     pub fn render_clear(
@@ -1732,7 +2121,7 @@ mod tests {
 
     #[test]
     fn fade_curves_start_bright_and_end_dark() {
-        for mode in 0..4 {
+        for mode in 0..5 {
             assert!(apply_fade_curve(0.0, mode) > 0.9, "mode {mode} start");
             assert!(apply_fade_curve(1.0, mode) < 0.1, "mode {mode} end");
         }
@@ -1752,7 +2141,7 @@ mod tests {
         let mut out = Vec::new();
         build_samples(&nodes, &cfg(), &mut out);
         assert!(out.len() >= nodes.len(), "spline emits at least one sample per segment");
-        // The curve now starts at the very first point (the cursor) and ends at the last node.
+        // The curve starts at the very first input point and ends at the last node.
         assert_eq!(out.first().map(|s| (s.x, s.y)), Some((0.0, 50.0)));
         assert_eq!(out.last().map(|s| (s.x, s.y)), Some((90.0, 50.0)));
         assert!(out.windows(2).all(|w| w[1].progress >= w[0].progress));
@@ -1773,7 +2162,9 @@ mod tests {
         let mut capsules = Vec::new();
         let config = cfg();
         build_layer_capsules(&out, 0, &config.trail.layers[0], &config, 0.0, UNBOUNDED_VIEWPORT, &mut capsules);
-        assert_eq!(capsules.len(), out.len() - 1);
+        // The stacked nodes keep their index, so the short run sits near the faded-out tail;
+        // capsules there may be culled as invisible, but never more than one per sample pair.
+        assert!(!capsules.is_empty() && capsules.len() < out.len());
         for c in &capsules {
             assert!(c.radii.iter().all(|r| r.is_finite() && *r >= config.trail.min_width * 0.5));
             assert!(c.color_a[3] <= 1.0 && c.color_b[3] <= 1.0, "alpha is clamped");
@@ -1796,12 +2187,12 @@ mod tests {
         assert_eq!(out.len(), 1);
     }
 
-    /// Regression: with the cursor far ahead of a tightly bunched chain, the uniform spline used
-    /// to hook back on itself at the head. The centripetal spline must move monotonically from
-    /// the cursor towards the nodes.
+    /// Regression: with a far lead point ahead of a tightly bunched chain, the uniform spline
+    /// used to hook back on itself at the head. The centripetal spline must move monotonically
+    /// from the first control point towards the rest of the chain.
     #[test]
     fn head_segment_never_hooks_backwards() {
-        let mut nodes = vec![(200.0, 0.0, 40.0)]; // cursor
+        let mut nodes = vec![(200.0, 0.0, 40.0)]; // far first control point
         for i in 0..30 {
             nodes.push((100.0 - i as f32 * 2.0, (i as f32 * 0.3).sin() * 0.5, 5.0));
         }
@@ -1811,7 +2202,7 @@ mod tests {
         assert!(head.len() >= 2, "the head segment is sampled");
         assert!(
             head.windows(2).all(|w| w[1].x <= w[0].x + 1e-3),
-            "x must decrease monotonically from the cursor into the chain"
+            "x must decrease monotonically from the first control point into the chain"
         );
         assert!(head.iter().all(|s| s.y.abs() < 2.0), "no lateral hook near the head");
         assert!(out.iter().all(|s| s.x.is_finite() && s.y.is_finite()));
@@ -1868,28 +2259,6 @@ mod tests {
     }
 
     #[test]
-    fn block_overtake_stops_a_node_at_the_wall_but_leaves_a_hairpin_alone() {
-        let wall: Wall = ((10.0, 0.0), (1.0, 0.0));
-        let mut n = TrailNode {
-            x: 12.0,
-            y: 0.5,
-            vx: 5.0,
-            vy: 1.0,
-            ..Default::default()
-        };
-        block_overtake((8.0, 0.5), &mut n, wall); // crossed 8 → 12: put back just behind 10
-        assert!(n.x < 10.0 && n.x > 9.99, "x={}", n.x);
-        assert!(n.vx.abs() < 1e-6 && (n.vy - 1.0).abs() < 1e-6, "forward velocity dropped");
-        let mut m = TrailNode {
-            x: 15.0,
-            vx: 5.0,
-            ..Default::default()
-        };
-        block_overtake((12.0, 0.0), &mut m, wall); // already ahead: a legitimate hairpin
-        assert_eq!((m.x, m.vx), (15.0, 5.0));
-    }
-
-    #[test]
     fn chain_grows_from_its_tail() {
         let mut c = chain(4, 100.0, 50.0);
         assert!(c.nodes.iter().all(|n| (n.x, n.y) == (100.0, 50.0)));
@@ -1902,7 +2271,7 @@ mod tests {
     }
 
     #[test]
-    fn chain_never_shoots_through_a_stopped_pointer() {
+    fn chain_settles_on_a_stopped_pointer_with_bounded_overshoot() {
         let cfg = cfg();
         let mut c = chain(40, 0.0, 0.0);
         let mut x = 0.0;
@@ -1910,66 +2279,287 @@ mod tests {
             x += 15.0;
             c.advance(x, 0.0, FRAME, &cfg);
         }
-        for frame in 0..300 {
+        let mut max_overshoot = 0.0f32;
+        for _ in 0..300 {
             c.advance(x, 0.0, FRAME, &cfg);
-            for (i, n) in c.nodes.iter().enumerate() {
-                assert!(
-                    n.x <= x + 1e-3,
-                    "node {i} is {:.3} px in front of the stopped pointer at frame {frame}",
-                    n.x - x
-                );
-                assert!(n.y.abs() < 1e-3, "node {i} drifted sideways: y={}", n.y);
+            for n in &c.nodes {
+                max_overshoot = max_overshoot.max(n.x - x);
             }
         }
-        assert!(c.nodes.iter().all(|n| x - n.x < 1.0), "chain gathers on the pointer");
+        // Spring-damper may overshoot slightly; it must stay bounded and then settle.
+        assert!(
+            max_overshoot < 80.0,
+            "head shot {max_overshoot:.1} px past the stopped pointer"
+        );
+        for (i, n) in c.nodes.iter().enumerate() {
+            assert!(
+                (n.x - x).abs() < 1.0,
+                "node {i} is {:.3} px from the pointer after settling",
+                n.x - x
+            );
+            assert!(n.y.abs() < 1.0, "node {i} drifted sideways: y={}", n.y);
+        }
         assert!(!c.is_moving(), "chain comes to rest");
     }
 
     #[test]
-    fn lead_nodes_never_overshoot_their_predecessor() {
-        let mut cfg = cfg();
-        cfg.trail.lead_nodes = 4;
-        let mut c = chain(40, 0.0, 0.0);
+    fn lazy_brush_dead_zone_holds_then_drags() {
+        let mut config = cfg();
+        config.trail.lazy_enabled = true;
+        config.trail.lazy_radius = 30.0;
+        config.trail.lazy_friction = 0.4;
+        let mut c = chain(10, 0.0, 0.0);
+
+        // Pointer moves 10 px/frame: while inside the dead zone the brush must not move.
         let mut x = 0.0;
-        for frame in 0..180 {
-            // Sprint / stop / sprint: the harshest case for overshoot.
-            x += if (frame / 30) % 2 == 0 { 25.0 } else { 0.0 };
-            c.advance(x, 0.0, FRAME, &cfg);
-            assert!(c.nodes[0].x <= x + 1e-3, "head passed the pointer at frame {frame}");
-            for i in 1..4 {
+        let mut saw_dead_zone = false;
+        let mut saw_follow = false;
+        for _ in 0..60 {
+            x += 10.0;
+            let prev_brush = c.brush;
+            c.advance(x, 0.0, FRAME, &config);
+            let dist = (x - c.brush.0).hypot(0.0 - c.brush.1);
+            let brush_moved = (c.brush.0 - prev_brush.0).abs() > 1e-6;
+            if dist <= config.trail.lazy_radius + 0.5 && !brush_moved && x <= config.trail.lazy_radius {
+                saw_dead_zone = true;
+            }
+            if dist > config.trail.lazy_radius + 0.5 && brush_moved {
+                saw_follow = true;
+            }
+            // Once moving, the brush keeps roughly `radius` behind the pointer.
+            if x > config.trail.lazy_radius * 3.0 {
                 assert!(
-                    c.nodes[i].x <= c.nodes[i - 1].x + 1e-3,
-                    "lead node {i} passed node {} at frame {frame}",
-                    i - 1
+                    dist >= config.trail.lazy_radius - 10.0 && dist <= config.trail.lazy_radius + 60.0,
+                    "brush distance {dist:.1} should hover near radius 30"
                 );
             }
+        }
+        assert!(saw_dead_zone, "brush never held still inside the dead zone");
+        assert!(saw_follow, "brush never started following after the dead zone");
+
+        // Disabled: the brush tracks the pointer exactly.
+        let off = cfg();
+        let mut c2 = chain(5, 0.0, 0.0);
+        c2.advance(100.0, 40.0, FRAME, &off);
+        assert_eq!(c2.brush, (100.0, 40.0), "disabled lazy brush mirrors pointer");
+    }
+
+    #[test]
+    fn distance_constraint_bounds_node_gaps() {
+        let cfg = cfg();
+        let mut c = chain(40, 0.0, 0.0);
+        // Teleport far in one frame; springs alone would stretch the chain across the gap.
+        c.advance(2000.0, 500.0, FRAME, &cfg);
+        for _ in 0..30 {
+            c.advance(2000.0, 500.0, FRAME, &cfg);
+        }
+        for (i, w) in c.nodes.windows(2).enumerate() {
+            let d = (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+            assert!(
+                d <= MAX_NODE_GAP + 1e-3,
+                "gap between nodes {i} and {} is {d:.2} px",
+                i + 1
+            );
         }
     }
 
     #[test]
-    fn reversal_keeps_passed_nodes_behind_the_pointer() {
+    fn fast_flick_does_not_slingshot_past_a_stopped_pointer() {
+        // Regression: the old 64 px clamp sat *below* the chain's natural steady-state gap
+        // during fast motion, so it fired every frame and injected `delta/dt_scale` into
+        // velocity — the trail visibly accelerated on sudden flicks.
         let cfg = cfg();
         let mut c = chain(40, 0.0, 0.0);
-        let mut x = 0.0;
-        for _ in 0..60 {
-            x += 12.0;
-            c.advance(x, 0.0, FRAME, &cfg);
+        for i in 0..30 {
+            c.advance(i as f32 * 8.0, 0.0, FRAME, &cfg);
         }
-        // The pointer runs back over its own trail; once it has passed a node, that node must
-        // never get in front of it again (that was the loop around the cursor).
-        let mut passed = vec![false; c.nodes.len()];
-        for frame in 0..150 {
-            x -= 12.0;
-            c.advance(x, 0.0, FRAME, &cfg);
-            for (i, n) in c.nodes.iter().enumerate() {
-                if n.x >= x - 1e-3 {
-                    passed[i] = true;
-                } else {
-                    assert!(!passed[i], "node {i} got back in front of the pointer at frame {frame}");
-                }
+        // Hard flick to a far target, then stop dead on it.
+        let target = 1500.0;
+        for _ in 0..5 {
+            c.advance(target, 0.0, FRAME, &cfg);
+        }
+        let mut max_ahead = f32::MIN;
+        for _ in 0..240 {
+            c.advance(target, 0.0, FRAME, &cfg);
+            for n in &c.nodes {
+                max_ahead = max_ahead.max(n.x - target);
             }
         }
-        assert!(passed.iter().all(|p| *p), "every node ends up behind the pointer");
+        assert!(
+            max_ahead < 200.0,
+            "head shot {max_ahead:.1} px past the stopped pointer (slingshot)"
+        );
+        for (i, n) in c.nodes.iter().enumerate() {
+            assert!(
+                (n.x - target).abs() < 5.0,
+                "node {i} is {:.3} px from the pointer after settling",
+                n.x - target
+            );
+        }
+    }
+
+    #[test]
+    fn sustained_fast_motion_never_engages_the_distance_clamp() {
+        // Natural steady-state gap at these defaults is a small multiple of the per-frame
+        // velocity — well under MAX_NODE_GAP. If the clamp were tight again (64 px) it would
+        // pin every consecutive pair to exactly MAX_NODE_GAP while moving.
+        let cfg = cfg();
+        let mut c = chain(40, 0.0, 0.0);
+        let mut min_pinned = f32::MAX;
+        for i in 0..90 {
+            // ~4800 px/s along x.
+            c.advance(i as f32 * 40.0, 0.0, FRAME, &cfg);
+            if i < 20 {
+                continue; // let the chain stretch out
+            }
+            for w in c.nodes.windows(2) {
+                let d = (w[1].x - w[0].x).hypot(w[1].y - w[0].y);
+                min_pinned = min_pinned.min(MAX_NODE_GAP - d);
+            }
+        }
+        assert!(
+            min_pinned > 1.0,
+            "a consecutive pair sat within 1 px of MAX_NODE_GAP during normal fast motion \
+             (clamp fighting the springs)"
+        );
+    }
+
+    #[test]
+    fn sample_progress_follows_the_original_node_index() {
+        // Legacy (Windhawk / V3 / TD) parameterise by node index: progress = (i + t) / (N − 1).
+        // Uneven spacing must not move it (arc length would put x=51 at ~0.5).
+        let nodes = [(0.0, 0.0, 5.0), (1.0, 0.0, 5.0), (51.0, 0.0, 5.0), (101.0, 0.0, 5.0)];
+        let mut config = cfg();
+        config.trail.interpolation_steps = 1;
+        config.trail.adaptive_quality = false;
+        let mut out = Vec::new();
+        build_samples(&nodes, &config, &mut out);
+        assert!(out.windows(2).all(|w| w[1].progress >= w[0].progress - 1e-6));
+        assert!(out[0].progress.abs() < 1e-6);
+        assert!((out.last().unwrap().progress - 1.0).abs() < 1e-6);
+        let at51 = out.iter().find(|s| (s.x - 51.0).abs() < 1e-3).expect("sample at node 2");
+        assert!((at51.progress - 2.0 / 3.0).abs() < 1e-4, "progress {}", at51.progress);
+    }
+
+    #[test]
+    fn merged_nodes_keep_their_original_index() {
+        // Head nodes 0..=4 collapsed on the cursor, then an even run: the survivors must keep
+        // their place in the taper instead of being stretched over the whole [0, 1] range.
+        let mut nodes = vec![(0.0, 0.0, 0.0); 5];
+        nodes.extend((1..=5).map(|i| (i as f32 * 10.0, 0.0, 5.0)));
+        let mut config = cfg();
+        config.trail.interpolation_steps = 1;
+        config.trail.adaptive_quality = false;
+        let mut out = Vec::new();
+        build_samples(&nodes, &config, &mut out);
+        let first_run = out.iter().find(|s| (s.x - 10.0).abs() < 1e-3).unwrap();
+        assert!((first_run.progress - 5.0 / 9.0).abs() < 1e-4, "node 5 → {}", first_run.progress);
+    }
+
+    #[test]
+    fn a_collapsed_chain_still_draws_a_round_dot_per_layer() {
+        // Windhawk keeps a 4-layer dot on a resting cursor; the ribbon must not pop out.
+        let nodes = vec![(300.0, 200.0, 0.0); 40];
+        let config = cfg();
+        let mut out = Vec::new();
+        build_samples(&nodes, &config, &mut out);
+        assert_eq!(out.len(), 1);
+        for (i, layer) in config.trail.layers.iter().enumerate() {
+            let mut capsules = Vec::new();
+            build_layer_capsules(&out, i, layer, &config, 0.0, UNBOUNDED_VIEWPORT, &mut capsules);
+            assert_eq!(capsules.len(), 1, "layer {i} emits one dot");
+            let c = capsules[0];
+            assert_eq!(c.a, c.b, "zero-length capsule");
+            let fade = apply_fade_curve(0.0, config.trail.fade_mode);
+            let expected = config.trail.cursor_size * layer.width_factor * fade * 0.5;
+            assert!((c.radii[0] - expected).abs() < 0.5, "layer {i} radius {} vs {expected}", c.radii[0]);
+        }
+    }
+
+    /// Length of the part of the ribbon that is at least half opaque (the part the eye reads).
+    fn visible_length(c: &TrailChain, config: &AppConfig) -> f32 {
+        let nodes: Vec<(f32, f32, f32)> = c.nodes.iter().map(|n| (n.x, n.y, n.speed)).collect();
+        let mut out = Vec::new();
+        build_samples(&nodes, config, &mut out);
+        out.windows(2)
+            .filter(|w| apply_fade_curve(w[1].progress, config.trail.fade_mode) >= 0.5)
+            .map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y))
+            .sum()
+    }
+
+    #[test]
+    fn stopping_retracts_the_visible_trail_into_the_cursor() {
+        // Legacy behaviour: after a stop the visible (bright) half of the ribbon shrinks
+        // steadily into the pointer. With arc-length progress it hung at full length.
+        let config = cfg();
+        let mut c = chain(80, 0.0, 0.0);
+        let mut x = 0.0;
+        for _ in 0..120 {
+            x += 10.0;
+            c.advance(x, 0.0, FRAME, &config);
+        }
+        let moving = visible_length(&c, &config);
+        assert!(moving > 100.0, "a moving trail is visible ({moving:.0} px)");
+        let mut prev = moving;
+        let mut shrank_by_half_at = None;
+        for frame in 0..240 {
+            c.advance(x, 0.0, FRAME, &config);
+            let len = visible_length(&c, &config);
+            assert!(len <= prev + 2.0, "visible trail grew after the stop: {prev:.1} → {len:.1}");
+            if shrank_by_half_at.is_none() && len < moving * 0.5 {
+                shrank_by_half_at = Some(frame);
+            }
+            prev = len;
+        }
+        let half = shrank_by_half_at.expect("the visible trail never halved");
+        assert!(half < 60, "took {half} frames to halve (should retract within ~1 s)");
+    }
+
+    #[test]
+    fn a_tiny_nudge_keeps_the_chain_awake_until_the_head_arrives() {
+        let config = cfg();
+        let mut c = chain(20, 0.0, 0.0);
+        c.advance(1.0, 0.0, FRAME, &config);
+        assert!(c.is_moving(), "head is 1 px off the pointer: not at rest yet");
+        for _ in 0..600 {
+            c.advance(1.0, 0.0, FRAME, &config);
+        }
+        assert!(!c.is_moving());
+        assert!((c.nodes[0].x - 1.0).abs() <= HEAD_REST_DISTANCE);
+    }
+
+    #[test]
+    fn non_finite_state_resets_the_chain_on_the_pointer() {
+        let mut config = cfg();
+        config.trail.spring = f32::INFINITY;
+        let mut c = chain(10, 0.0, 0.0);
+        for _ in 0..3 {
+            c.advance(50.0, 20.0, FRAME, &config);
+        }
+        assert!(c.nodes.iter().all(|n| n.x.is_finite() && n.y.is_finite()));
+    }
+
+    #[test]
+    fn squishy_head_is_proportional_to_speed_not_saturated() {
+        // Windhawk measures squish velocity in px per frame; px/s saturated at ~25 px/s.
+        let mut config = cfg();
+        config.head.enabled = true;
+        let run = |px_per_frame: f32| {
+            let mut h = SquishyState::default();
+            let mut x = 0.0;
+            for _ in 0..120 {
+                x += px_per_frame;
+                h.step(x, 0.0, FRAME / REFERENCE_FRAME, &config);
+            }
+            h.current_scale
+        };
+        let (slow, fast) = (run(1.0), run(6.0));
+        assert!(slow > 0.0 && fast > slow * 3.0, "slow {slow:.3} fast {fast:.3}");
+        // The head eases toward the pointer instead of snapping (smoothing 50 %).
+        let mut h = SquishyState::default();
+        h.step(0.0, 0.0, 1.0, &config);
+        h.step(100.0, 0.0, 1.0, &config);
+        assert!((h.pos_x - 50.0).abs() < 1e-3, "pos {}", h.pos_x);
     }
 
     #[test]
@@ -1988,7 +2578,10 @@ mod tests {
         let b = run(240.0);
         for (i, (p, q)) in a.iter().zip(&b).enumerate() {
             let d = ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt();
-            assert!(d < 12.0, "node {i} differs by {d:.1} px between 60 and 240 fps");
+            // Sub-stepped Euler is not bit-identical across frame rates; with the 1/120
+            // reference frame the residual is a few px on mid-chain nodes after 1 s.
+            assert!(d < 20.0, "node {i} differs by {d:.1} px between 60 and 240 fps");
         }
     }
 }
+

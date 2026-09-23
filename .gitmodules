@@ -1,0 +1,3 @@
+[submodule "legacy/TD_Web_Trail"]
+	path = legacy/TD_Web_Trail
+	url = https://github.com/NairoDorian/TD_Web_Trail.git

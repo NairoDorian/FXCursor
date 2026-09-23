@@ -31,7 +31,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
         title="Kinematic Particle Bursts"
         desc="Physics-driven particles with gravity vector, air resistance, and alpha decay"
         headerRight={
-          <Toggle checked={props.particles.enabled} onChange={(v) => update({ enabled: v })} />
+          <Toggle ariaLabel="Enable click particles" checked={props.particles.enabled} onChange={(v) => update({ enabled: v })} />
         }
       >
         <ColorPicker
@@ -81,7 +81,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
         />
         <Slider
           label="Air Drag Friction"
-          sub="Velocity decay factor per second (0.50 - 0.99)"
+          sub="Velocity kept per 1/60 s (0.50 = stops almost at once, 0.99 = glides)"
           min={0.5}
           max={0.99}
           step={0.01}

@@ -43,6 +43,15 @@ type Tab =
   | 'developer'
   | 'about';
 
+/** JSON with object keys sorted, so two equal configs always serialise identically. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).toSorted(([a], [b]) => a.localeCompare(b)))
+      : v
+  );
+}
+
 export function AppContent() {
   const [activeTab, setActiveTab] = createSignal<Tab>('layers');
   const [config, setConfig] = createSignal<AppConfig>(getDefaultConfig());
@@ -50,7 +59,14 @@ export function AppContent() {
 
   let isInternalSync = false;
   let updateAnimId: number | undefined;
-  let lastLocalEditTime = 0;
+  /**
+   * Configs this window sent recently (canonical JSON). The backend echoes every `update_config`
+   * as `config-updated`; echoes are recognised by content, not by a time window. The old 400 ms
+   * window also swallowed genuine external changes (tray / global-hotkey toggle) that landed
+   * during a slider drag, and the next slider tick then pushed the stale value back.
+   */
+  const recentlySent: string[] = [];
+  const RECENTLY_SENT_MAX = 64;
 
   const applyConfig = (newCfg: AppConfig) => {
     isInternalSync = true;
@@ -127,6 +143,8 @@ export function AppContent() {
     }
 
     attachBackendLogs();
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
     (async () => {
       try {
         const remoteCfg = await commands.getConfig();
@@ -138,16 +156,23 @@ export function AppContent() {
       }
 
       try {
-        await listen<AppConfig>('config-updated', (event) => {
-          // Ignore echo events that arrived from our own active dragging (within 400ms)
-          if (event.payload && performance.now() - lastLocalEditTime > 400) {
-            applyConfig(event.payload);
-          }
+        const un = await listen<AppConfig>('config-updated', (event) => {
+          if (!event.payload) return;
+          // An echo of something we sent (possibly several frames old during a drag) must not
+          // overwrite newer local edits; anything else is an external change and wins.
+          if (recentlySent.includes(canonicalJson(event.payload))) return;
+          applyConfig(event.payload);
         });
+        if (disposed) un();
+        else unlisten = un;
       } catch (e) {
         console.warn('Event listener error:', e);
       }
     })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   });
 
   // SolidJS 2.0 two-argument createEffect: (computeFn, effectFn)
@@ -155,9 +180,10 @@ export function AppContent() {
     () => config(),
     (cfg) => {
       if (!isTauri || isInternalSync) return;
-      lastLocalEditTime = performance.now();
       if (updateAnimId) cancelAnimationFrame(updateAnimId);
       updateAnimId = requestAnimationFrame(() => {
+        recentlySent.push(canonicalJson(cfg));
+        if (recentlySent.length > RECENTLY_SENT_MAX) recentlySent.shift();
         commands.updateConfig(cfg).catch((err) => {
           console.warn('Backend invoke error:', err);
         });
@@ -256,18 +282,21 @@ export function AppContent() {
     }
   };
 
-  const handleResetDefaults = async () => {
+  /** Restores factory defaults; `false` when the backend refused (reported via toast). */
+  const handleResetDefaults = async (): Promise<boolean> => {
     if (isTauri) {
       try {
-        const def = await commands.resetDefaults();
-        applyConfig(def);
-        return;
+        applyConfig(await commands.resetDefaults());
+        return true;
       } catch (e) {
+        // Do not fake a reset locally: the UI would then disagree with the running overlay.
         toast.error(`Reset failed: ${e}`);
+        return false;
       }
     }
     setConfig(getDefaultConfig());
     setCurrentPresetId('master_4layer');
+    return true;
   };
 
   const PRESET_BADGES: Record<string, string> = {
@@ -374,7 +403,7 @@ export function AppContent() {
           <div>
             <div class="brand-title">FXCursor</div>
             <span class="brand-version">
-              D3D11 4-Layer Master Design (Direct3D 12 / Metal / Vulkan)
+              Windhawk 4-Layer Master Design (wgpu: Direct3D 12 / Vulkan / Metal)
             </span>
           </div>
         </div>
@@ -518,6 +547,8 @@ export function AppContent() {
           <HeadTab
             head={config().head}
             onChange={(newHead) => setConfig({ ...config(), head: newHead })}
+            gpuCursor={config().gpu_cursor ?? getDefaultConfig().gpu_cursor!}
+            onGpuCursorChange={(next) => setConfig({ ...config(), gpu_cursor: next })}
           />
         </Show>
 

@@ -113,7 +113,7 @@ export const AboutTab: Component = () => {
 
       <SectionCard
         title="License"
-        desc="MIT License — free for personal, academic and commercial use"
+        desc="Dual-licensed MIT OR Apache-2.0 — free for personal, academic and commercial use"
       >
         <div style="font-size: 12px; color: var(--text-dim);">
           Source: github.com/NairoDorian/FXCursor

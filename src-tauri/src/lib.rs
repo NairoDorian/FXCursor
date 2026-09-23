@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod capture;
+pub mod cursor;
 pub mod display;
 pub mod input;
 pub mod integrations;
@@ -12,7 +13,6 @@ pub mod settings_repair;
 pub mod user_presets;
 #[cfg(not(target_os = "windows"))]
 pub mod tracker;
-pub mod webview_hardening;
 
 use fxcursor_protocol::{
     deserialize_with_self_healing, get_builtin_presets, AppConfig, PresetInfo, RepairOutcome,
@@ -142,7 +142,14 @@ fn update_tray_tooltip(app: &AppHandle, config: &AppConfig) {
 }
 
 /// Replaces the live configuration and commits it. Returns the stored snapshot.
-fn replace_config(app: &AppHandle, new_config: AppConfig) -> Result<AppConfig, String> {
+///
+/// Every external source funnels through here (IPC, `--apply`, presets, import, reset), so
+/// this is where out-of-range values are clamped before the renderer ever sees them.
+fn replace_config(app: &AppHandle, mut new_config: AppConfig) -> Result<AppConfig, String> {
+    let clamped = new_config.sanitize();
+    if !clamped.is_empty() {
+        log::warn!("[config] clamped out-of-range value(s): {clamped:?}");
+    }
     let state = app
         .try_state::<SharedConfig>()
         .ok_or("configuration state not initialised")?;
@@ -273,6 +280,11 @@ pub fn apply_patch(app: &AppHandle, patch_json: &str) -> Result<AppConfig, Strin
 
 // ---------------------------------------------------------------------------------------------
 // IPC commands (exported to TypeScript via tauri-specta → src/lib/bindings.ts)
+//
+// Commands that do real work are `async`: Tauri runs synchronous commands on the main thread,
+// and the overlay render thread still needs that thread for its (rare) window queries. A slider
+// drag sends `update_config` ~60 times a second, so it must not queue behind disk or registry
+// I/O there. Plugins that need the main thread (global shortcut, tray) marshal to it themselves.
 // ---------------------------------------------------------------------------------------------
 
 #[tauri::command]
@@ -283,7 +295,7 @@ fn ping() -> String {
 
 #[tauri::command]
 #[specta::specta]
-fn get_diagnostics(app: AppHandle) -> Result<SystemDiagnostics, String> {
+async fn get_diagnostics(app: AppHandle) -> Result<SystemDiagnostics, String> {
     let (vx, vy, vw, vh) = overlay::get_virtual_screen_bounds();
     let config_path = app
         .try_state::<Persistence>()
@@ -338,7 +350,7 @@ fn get_config(state: tauri::State<SharedConfig>) -> Result<AppConfig, String> {
 
 #[tauri::command]
 #[specta::specta]
-fn update_config(app: AppHandle, new_config: AppConfig) -> Result<(), String> {
+async fn update_config(app: AppHandle, new_config: AppConfig) -> Result<(), String> {
     replace_config(&app, new_config).map(|_| ())
 }
 
@@ -350,35 +362,39 @@ fn toggle_overlay(app: AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 #[specta::specta]
-fn reset_defaults(app: AppHandle) -> Result<AppConfig, String> {
+async fn reset_defaults(app: AppHandle) -> Result<AppConfig, String> {
     replace_config(&app, AppConfig::default())
 }
 
 /// Writes the current configuration to disk immediately (bypassing the autosave debounce).
 #[tauri::command]
 #[specta::specta]
-fn save_config(
-    state: tauri::State<SharedConfig>,
-    persistence: tauri::State<Persistence>,
+async fn save_config(
+    state: tauri::State<'_, SharedConfig>,
+    persistence: tauri::State<'_, Persistence>,
 ) -> Result<String, String> {
     let snapshot = state.lock().map_err(|e| e.to_string())?.clone();
     settings_repair::save(&persistence.path, &snapshot)?;
     Ok(persistence.path.display().to_string())
 }
 
-/// Built-in presets, with Rust as the single source of truth.
-#[tauri::command]
-#[specta::specta]
-fn list_presets(app: AppHandle) -> Vec<PresetInfo> {
+/// Built-in presets (Rust is the single source of truth) followed by the user presets.
+fn all_presets(app: &AppHandle) -> Vec<PresetInfo> {
     let mut presets = get_builtin_presets();
-    presets.extend(user_presets::list(&app));
+    presets.extend(user_presets::list(app));
     presets
 }
 
 #[tauri::command]
 #[specta::specta]
-fn apply_preset(app: AppHandle, id: String) -> Result<AppConfig, String> {
-    let preset = list_presets(app.clone())
+async fn list_presets(app: AppHandle) -> Vec<PresetInfo> {
+    all_presets(&app)
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn apply_preset(app: AppHandle, id: String) -> Result<AppConfig, String> {
+    let preset = all_presets(&app)
         .into_iter()
         .find(|p| p.id == id)
         .ok_or_else(|| format!("unknown preset '{id}'"))?;
@@ -391,7 +407,7 @@ fn apply_preset(app: AppHandle, id: String) -> Result<AppConfig, String> {
 /// and selects it. Saving under an existing name overwrites that preset.
 #[tauri::command]
 #[specta::specta]
-fn save_user_preset(app: AppHandle, name: String, description: String) -> Result<PresetInfo, String> {
+async fn save_user_preset(app: AppHandle, name: String, description: String) -> Result<PresetInfo, String> {
     let state = app
         .try_state::<SharedConfig>()
         .ok_or("configuration state not initialised")?;
@@ -404,16 +420,16 @@ fn save_user_preset(app: AppHandle, name: String, description: String) -> Result
 /// Deletes a user preset and returns the refreshed preset list. Built-ins are refused.
 #[tauri::command]
 #[specta::specta]
-fn delete_user_preset(app: AppHandle, id: String) -> Result<Vec<PresetInfo>, String> {
+async fn delete_user_preset(app: AppHandle, id: String) -> Result<Vec<PresetInfo>, String> {
     user_presets::delete(&app, &id)?;
-    Ok(list_presets(app))
+    Ok(all_presets(&app))
 }
 
 /// Imports a user-supplied JSON document through the self-healing deserializer, so partial or
 /// slightly broken files still apply cleanly. Returns the healed config and what was repaired.
 #[tauri::command]
 #[specta::specta]
-fn import_config(app: AppHandle, json: String) -> Result<ImportOutcome, String> {
+async fn import_config(app: AppHandle, json: String) -> Result<ImportOutcome, String> {
     let outcome: RepairOutcome<AppConfig> = deserialize_with_self_healing(&json)?;
     if outcome
         .repaired_paths
@@ -516,7 +532,8 @@ pub fn run() {
 
     let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
         .error_handling(ErrorHandlingMode::Throw)
-        // Our floats are never NaN/∞, so export f32 as plain `number` instead of `number | null`.
+        // `AppConfig::sanitize` replaces NaN/∞ before any config is stored, so export f32 as a
+        // plain `number` instead of `number | null`.
         .semantic_types(
             specta_typescript::semantic::Configuration::default().enable_lossless_floats(),
         )
@@ -621,12 +638,11 @@ pub fn run() {
                 saver: AutoSaver::spawn(config_path),
             });
 
-            // 2. Main window hardening and start-minimized behaviour.
-            if let Some(main_win) = app.get_webview_window("main") {
-                webview_hardening::apply_hardening(&main_win);
-                if loaded.general.start_minimized || start_hidden_flag {
-                    let _ = main_win.hide();
-                }
+            // 2. Start-minimized behaviour (webview hardening lives in `src/lib/hardening.ts`).
+            if (loaded.general.start_minimized || start_hidden_flag)
+                && let Some(main_win) = app.get_webview_window("main")
+            {
+                let _ = main_win.hide();
             }
 
             // 3. System tray.
@@ -714,8 +730,24 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running fxcursor studio");
+        .build(tauri::generate_context!())
+        .expect("error while building fxcursor studio")
+        .run(|handle, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                // `SetSystemCursor` replacements survive process death: put the arrow back
+                // and latch it (the render thread may still run a frame before the process
+                // ends and must not hide it again). Nothing calls `prevent_exit`, so an exit
+                // request always ends the process. The panic hook covers crashes.
+                crate::cursor::force_restore();
+                // The autosave debounce would otherwise drop the last ~400 ms of edits.
+                if let Some(p) = handle.try_state::<Persistence>() {
+                    p.saver.flush(std::time::Duration::from_millis(500));
+                }
+            }
+        });
 }
 
 #[cfg(test)]

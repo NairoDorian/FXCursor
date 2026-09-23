@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use wgpu::{
-    Backends, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
+    Backends, CompositeAlphaMode, Device, DeviceDescriptor, Features, Instance, InstanceDescriptor, Limits,
     PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration,
     TextureUsages,
 };
@@ -63,12 +63,18 @@ impl GpuContext {
             .expect("Failed to create wgpu device");
 
         let surface_caps = surface.get_capabilities(&adapter);
+        // Same choices as the app's overlay (src-tauri/src/overlay/mod.rs): a plain UNORM target
+        // (pre-multiplied colours stay valid for the compositor) and vsync presentation.
         let surface_format = surface_caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
+            .find(|f| !f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+        let alpha_mode = [CompositeAlphaMode::PreMultiplied, CompositeAlphaMode::PostMultiplied]
+            .into_iter()
+            .find(|m| surface_caps.alpha_modes.contains(m))
+            .unwrap_or(surface_caps.alpha_modes[0]);
 
         let size = window.surface_size();
         let width = size.width.max(1);
@@ -79,8 +85,8 @@ impl GpuContext {
             format: surface_format,
             width,
             height,
-            present_mode: PresentMode::Mailbox,
-            alpha_mode: surface_caps.alpha_modes[0],
+            present_mode: PresentMode::Fifo,
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
             color_space: Default::default(),

@@ -1,92 +1,34 @@
 import { Component, createSignal, onSettled } from 'solid-js';
 import type { AppConfig, LayerConfig } from '../../lib/presets';
 import { modeMask } from '../../lib/effectMode';
+import {
+  buildSamples,
+  fadeCurve,
+  layerSampleStyle,
+  MAX_FRAME_DELTA,
+  MIN_VISIBLE_ALPHA,
+  REFERENCE_FRAME,
+  SquishyHead,
+  TrailChain,
+  type Rgba,
+} from '../../lib/trail';
 
 /**
- * 2D-canvas mirror of `crates/fxcursor-render`. The physics constants, fade curves, width /
- * alpha modulation, rainbow and effect-mode gating follow the Rust renderer so what you see here
- * is what the overlay draws (minus GPU anti-aliasing). Scene is scaled by `PREVIEW_SCALE` to fit.
+ * 2D-canvas preview of `crates/fxcursor-render`. The trail physics, spline sampling, fade and
+ * width/alpha styling come from `src/lib/trail.ts`, which is tested against a Rust reference
+ * trace (`test/trail-parity.test.ts`), so the motion here is the overlay's motion. Only the
+ * compositing is approximated (Canvas 2D instead of the GPU depth-resolved capsule union).
+ * The scene is scaled by `PREVIEW_SCALE` to fit.
  */
 interface LivePreviewProps {
   config: () => AppConfig;
-}
-
-interface Node {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  speed: number;
-  /** Unit direction of the last significant motion (0,0 until the node has moved). */
-  dx: number;
-  dy: number;
-}
-
-/** The line through a node perpendicular to its direction of motion; successors may not cross it. */
-interface Wall {
-  x: number;
-  y: number;
-  ux: number;
-  uy: number;
-}
-
-/**
- * Keeps `node` from overtaking its predecessor: a step that crossed the wall from behind to
- * ahead is clamped back onto it and the forward part of the velocity is dropped. A node that
- * was already ahead (the pointer just reversed into the trail) is a legitimate hairpin and is
- * left alone. Mirrors `block_overtake` in the Rust renderer.
- */
-function blockOvertake(fromX: number, fromY: number, node: Node, wall: Wall) {
-  const before = (fromX - wall.x) * wall.ux + (fromY - wall.y) * wall.uy;
-  const after = (node.x - wall.x) * wall.ux + (node.y - wall.y) * wall.uy;
-  if (before <= 0 && after > 0) {
-    const pushBack = after + 1e-4;
-    node.x -= wall.ux * pushBack;
-    node.y -= wall.uy * pushBack;
-    const vAlong = node.vx * wall.ux + node.vy * wall.uy;
-    if (vAlong > 0) {
-      node.vx -= wall.ux * vAlong;
-      node.vy -= wall.uy * vAlong;
-    }
-  }
-}
-
-/** Refreshes the cached speed and, if the node moved, its direction of motion. */
-function finishStep(node: Node, fromX: number, fromY: number) {
-  node.speed = Math.hypot(node.vx, node.vy);
-  const len = Math.hypot(node.x - fromX, node.y - fromY);
-  if (len >= 1e-3) {
-    node.dx = (node.x - fromX) / len;
-    node.dy = (node.y - fromY) / len;
-  }
-}
-
-/** First-order pursuit toward a target: never overshoots; velocity from the actual displacement. */
-function followStep(node: Node, tx: number, ty: number, a: number, wall: Wall | null, dtScale: number) {
-  const fromX = node.x;
-  const fromY = node.y;
-  node.x += (tx - node.x) * a;
-  node.y += (ty - node.y) * a;
-  if (wall) blockOvertake(fromX, fromY, node, wall);
-  node.vx = (node.x - fromX) / dtScale;
-  node.vy = (node.y - fromY) / dtScale;
-  finishStep(node, fromX, fromY);
-}
-
-interface Sample {
-  x: number;
-  y: number;
-  nx: number;
-  ny: number;
-  speed: number;
-  progress: number;
 }
 
 interface Ripple {
   x: number;
   y: number;
   t: number;
-  color: [number, number, number, number];
+  color: Rgba;
 }
 
 interface Particle {
@@ -102,53 +44,10 @@ interface Particle {
 /** Preview pixels per overlay pixel. */
 const PREVIEW_SCALE = 0.55;
 
-/**
- * Centripetal Catmull-Rom (α = 0.5, Barry–Goldman form) between p1 and p2 — same as
- * `catmull_rom_centripetal` in the Rust renderer. Never hooks or loops for uneven spacing.
- */
-function catmullRom(
-  p0: [number, number],
-  p1: [number, number],
-  p2: [number, number],
-  p3: [number, number],
-  t: number
-): [number, number] {
-  const knot = (a: [number, number], b: [number, number]) =>
-    Math.sqrt(Math.sqrt(Math.max(1e-6, (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)));
-  const lerp = (
-    a: [number, number],
-    b: [number, number],
-    wa: number,
-    wb: number
-  ): [number, number] => [a[0] * wa + b[0] * wb, a[1] * wa + b[1] * wb];
-  const t0 = 0;
-  const t1 = t0 + knot(p0, p1);
-  const t2 = t1 + knot(p1, p2);
-  const t3 = t2 + knot(p2, p3);
-  const tt = t1 + (t2 - t1) * Math.min(1, Math.max(0, t));
-  const a1 = lerp(p0, p1, (t1 - tt) / (t1 - t0), (tt - t0) / (t1 - t0));
-  const a2 = lerp(p1, p2, (t2 - tt) / (t2 - t1), (tt - t1) / (t2 - t1));
-  const a3 = lerp(p2, p3, (t3 - tt) / (t3 - t2), (tt - t2) / (t3 - t2));
-  const b1 = lerp(a1, a2, (t2 - tt) / (t2 - t0), (tt - t0) / (t2 - t0));
-  const b2 = lerp(a2, a3, (t3 - tt) / (t3 - t1), (tt - t1) / (t3 - t1));
-  return lerp(b1, b2, (t2 - tt) / (t2 - t1), (tt - t1) / (t2 - t1));
-}
+/** DOM `MouseEvent.button` (0 left, 1 middle, 2 right) → renderer order (0 left, 1 right, 2 middle). */
+const DOM_TO_RENDERER_BUTTON: Record<number, number> = { 0: 0, 1: 2, 2: 1 };
 
-/** Same curves as `apply_fade_curve` in Rust: 0 linear, 1 ease-out, 2 exponential, 3 sigmoid. */
-function fadeCurve(progress: number, mode: number): number {
-  switch (mode) {
-    case 1:
-      return 1 - progress * progress;
-    case 2:
-      return Math.exp(-progress * 3);
-    case 3:
-      return 1 / (1 + Math.exp(8 * (progress - 0.5)));
-    default:
-      return 1 - progress;
-  }
-}
-
-function hslToRgba(hue: number, sat: number, lit: number): [number, number, number, number] {
+function hslToRgba(hue: number, sat: number, lit: number): Rgba {
   const h = ((hue % 360) + 360) % 360;
   const c = (1 - Math.abs(2 * lit - 1)) * sat;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -165,21 +64,7 @@ function hslToRgba(hue: number, sat: number, lit: number): [number, number, numb
   return [r + m, g + m, b + m, 1];
 }
 
-function lerpRgba(
-  a: [number, number, number, number],
-  b: [number, number, number, number],
-  t: number
-): [number, number, number, number] {
-  const k = Math.max(0, Math.min(1, t));
-  return [
-    a[0] + (b[0] - a[0]) * k,
-    a[1] + (b[1] - a[1]) * k,
-    a[2] + (b[2] - a[2]) * k,
-    a[3] + (b[3] - a[3]) * k,
-  ];
-}
-
-function rgbaStr(c: [number, number, number, number], alphaMul = 1): string {
+function rgbaStr(c: Rgba, alphaMul = 1): string {
   const r = Math.round(Math.max(0, Math.min(1, c[0])) * 255);
   const g = Math.round(Math.max(0, Math.min(1, c[1])) * 255);
   const b = Math.round(Math.max(0, Math.min(1, c[2])) * 255);
@@ -209,15 +94,12 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
   };
 
   // Simulation state lives in overlay pixel units; drawing applies PREVIEW_SCALE.
-  const nodes: Node[] = [];
+  const chain = new TrailChain();
+  const head = new SquishyHead();
   const ripples: Ripple[] = [];
   const particles: Particle[] = [];
   let mouseX = 0;
   let mouseY = 0;
-  let squish = { prevX: 0, prevY: 0, scale: 0, target: 0, angle: 0, targetAngle: 0 };
-  const headTarget = { x: 0, y: 0 };
-  const lastMouse = { x: 0, y: 0 };
-  const cursorDir = { x: 0, y: 0 };
   let satAngle = 0;
   let mirrorAngle = 0;
   let hue = 0;
@@ -230,6 +112,7 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
     return (seed >>> 0) / 4294967295;
   };
 
+  /** `button` in renderer order: 0 = left, 1 = right, anything else = middle/extra. */
   const spawnClick = (button: number, cfg: AppConfig) => {
     const mask = modeMask(cfg.effect_mode);
     if (!cfg.enabled) return;
@@ -243,9 +126,11 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
       ripples.push({ x: mouseX, y: mouseY, t: 0, color });
     }
     if (cfg.particles.enabled && mask.particles) {
-      for (let i = 0; i < cfg.particles.count_per_click && particles.length < 400; i++) {
-        const angle = rand() * Math.PI * 2;
-        const speed = cfg.particles.base_speed * (0.5 + rand() * 0.8);
+      // Evenly spaced directions with a little jitter, like `spawn_click` in Rust.
+      const count = Math.min(cfg.particles.count_per_click, Math.max(0, 400 - particles.length));
+      for (let i = 0; i < count; i++) {
+        const angle = (i / Math.max(1, count)) * Math.PI * 2 + (rand() - 0.5) * 0.5;
+        const speed = cfg.particles.base_speed * (0.7 + rand() * 0.6);
         const maxLife = (cfg.particles.duration_ms / 1000) * (0.6 + rand() * 0.8);
         particles.push({
           x: mouseX,
@@ -269,7 +154,8 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
     let nextAutoClick = 1.5;
 
     const loop = (currT: number) => {
-      const dt = Math.max(0.001, Math.min((currT - lastT) / 1000, 0.033));
+      // Same clamp as `update_mouse` (rAF pauses in hidden tabs; resume without a jump).
+      const dt = Math.max(0.001, Math.min((currT - lastT) / 1000, MAX_FRAME_DELTA));
       lastT = currT;
       time += dt;
 
@@ -329,77 +215,11 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
       if (cfg.rainbow.enabled) hue = (hue + cfg.rainbow.speed * dt * 60) % 360;
 
       const targetLen = Math.max(4, Math.min(cfg.trail.length, 150));
-      while (nodes.length < targetLen) nodes.push({ x: mouseX, y: mouseY, vx: 0, vy: 0, speed: 0, dx: 0, dy: 0 });
-      if (nodes.length > targetLen) nodes.length = targetLen;
-
-      const dtScale = Math.min(Math.max(dt / (1 / 60), 0.1), 5.0);
-      const bodySpring = cfg.trail.spring / 1000;
-      const bodyFric = Math.pow(Math.min(Math.max(1 - cfg.trail.damping / 100, 0.01), 1), dtScale);
-      const leadNodes = Math.min(Math.max(cfg.trail.lead_nodes ?? 4, 1), nodes.length);
-
-      // Mirrors `TrailChain::step` in Rust: head + lead nodes are pursuit followers, the rest a
-      // spring chain, and no node may overtake its predecessor along the predecessor's motion.
-      const headSmoothing = Math.min(Math.max(cfg.trail.head_damping / 100, 0), 0.95);
-      const targetBlend = 1 - Math.pow(headSmoothing, dtScale);
-      headTarget.x += (mouseX - headTarget.x) * targetBlend;
-      headTarget.y += (mouseY - headTarget.y) * targetBlend;
-      const follow = Math.min(Math.max(cfg.trail.head_spring / 100, 0.05), 0.98);
-      const followA = 1 - Math.pow(1 - follow, dtScale);
-      const cursorStep = Math.hypot(mouseX - lastMouse.x, mouseY - lastMouse.y);
-      if (cursorStep >= 0.05) {
-        cursorDir.x = (mouseX - lastMouse.x) / cursorStep;
-        cursorDir.y = (mouseY - lastMouse.y) / cursorStep;
-      }
-      lastMouse.x = mouseX;
-      lastMouse.y = mouseY;
-      const cursorWall: Wall | null =
-        cursorDir.x !== 0 || cursorDir.y !== 0
-          ? { x: mouseX, y: mouseY, ux: cursorDir.x, uy: cursorDir.y }
-          : null;
-      followStep(nodes[0], headTarget.x, headTarget.y, followA, cursorWall, dtScale);
-      for (let i = 1; i < nodes.length; i++) {
-        const cur = nodes[i];
-        const prev = nodes[i - 1];
-        const wall: Wall | null =
-          prev.dx !== 0 || prev.dy !== 0 ? { x: prev.x, y: prev.y, ux: prev.dx, uy: prev.dy } : null;
-        if (i < leadNodes) {
-          followStep(cur, prev.x, prev.y, followA, wall, dtScale);
-          continue;
-        }
-        const fromX = cur.x;
-        const fromY = cur.y;
-        if (i > 1) {
-          const pp = nodes[i - 2];
-          cur.vx += (pp.x - cur.x) * bodySpring * 0.3 * dtScale;
-          cur.vy += (pp.y - cur.y) * bodySpring * 0.3 * dtScale;
-        }
-        cur.vx += (prev.x - cur.x) * bodySpring * dtScale;
-        cur.vy += (prev.y - cur.y) * bodySpring * dtScale;
-        cur.vx *= bodyFric;
-        cur.vy *= bodyFric;
-        cur.x += cur.vx * dtScale;
-        cur.y += cur.vy * dtScale;
-        if (wall) blockOvertake(fromX, fromY, cur, wall);
-        finishStep(cur, fromX, fromY);
-      }
-
-      if (cfg.head.enabled) {
-        const dx = mouseX - squish.prevX;
-        const dy = mouseY - squish.prevY;
-        const velocity = Math.hypot(dx, dy) / dt;
-        const intensity = cfg.head.squish_intensity / 100;
-        squish.target = (Math.min(velocity * 8, 200) / 15) * intensity;
-        const smoothing = Math.min(Math.max(cfg.head.squish_smoothing / 100, 0.01), 1);
-        const adaptive = Math.min(Math.max(smoothing * dtScale, 0), 1);
-        squish.scale += (squish.target - squish.scale) * adaptive;
-        if (velocity > 0.5) squish.targetAngle = Math.atan2(dy, dx);
-        let diff = squish.targetAngle - squish.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        squish.angle += diff * adaptive;
-        squish.prevX = mouseX;
-        squish.prevY = mouseY;
-      }
+      chain.resize(targetLen, mouseX, mouseY);
+      chain.advance(mouseX, mouseY, dt, cfg.trail);
+      const dtScale = Math.min(Math.max(dt / REFERENCE_FRAME, 0.1), 5);
+      if (cfg.head.enabled) head.step(mouseX, mouseY, dtScale, cfg.head);
+      else head.reset();
 
       // ---- 3. Draw --------------------------------------------------------------------------
       ctx.clearRect(0, 0, cssWidth, cssHeight);
@@ -422,76 +242,16 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
       const enabled = cfg.enabled;
 
       // Ribbon
-      if (enabled && cfg.trail.enabled && mask.trail && nodes.length >= 4) {
-        const samples: Sample[] = [];
-        // Mirror the renderer: the centerline starts at the real cursor so the cap stays attached.
-        const chain: Node[] = [
-          { x: mouseX, y: mouseY, vx: 0, vy: 0, speed: nodes[0].speed, dx: 0, dy: 0 },
-          ...nodes,
-        ];
-        // Phantom control points mirrored past both ends so the curve runs cursor → last node.
-        const mirror = (a: Node, b: Node): Node => ({
-          x: 2 * a.x - b.x,
-          y: 2 * a.y - b.y,
-          vx: 0,
-          vy: 0,
-          speed: a.speed,
-          dx: 0,
-          dy: 0,
-        });
-        const ext: Node[] = [
-          mirror(chain[0], chain[1]),
-          ...chain,
-          mirror(chain[chain.length - 1], chain[chain.length - 2]),
-        ];
-        const segCount = ext.length - 3;
-        const baseSteps = Math.max(1, cfg.trail.interpolation_steps);
-        let prevNx = 0;
-        let prevNy = 0;
-        for (let s = 0; s < segCount; s++) {
-          const p0: [number, number] = [ext[s].x, ext[s].y];
-          const p1: [number, number] = [ext[s + 1].x, ext[s + 1].y];
-          const p2: [number, number] = [ext[s + 2].x, ext[s + 2].y];
-          const p3: [number, number] = [ext[s + 3].x, ext[s + 3].y];
-          const sp1 = ext[s + 1].speed;
-          const sp2 = ext[s + 2].speed;
-          const segDist = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-          const steps = cfg.trail.adaptive_quality
-            ? Math.min(24, Math.max(baseSteps, Math.ceil(segDist / 6)))
-            : baseSteps;
-          for (let st = 0; st < steps; st++) {
-            const t = st / steps;
-            const pt = catmullRom(p0, p1, p2, p3, t);
-            const nxt = catmullRom(p0, p1, p2, p3, (st + 0.5) / steps);
-            const pdx = nxt[0] - pt[0];
-            const pdy = nxt[1] - pt[1];
-            const plen = Math.hypot(pdx, pdy);
-            let nx = plen > 0.0001 ? -pdy / plen : 0;
-            let ny = plen > 0.0001 ? pdx / plen : 1;
-            if (samples.length > 0 && nx * prevNx + ny * prevNy < 0) {
-              nx = -nx;
-              ny = -ny;
-            }
-            prevNx = nx;
-            prevNy = ny;
-            samples.push({
-              x: pt[0],
-              y: pt[1],
-              nx,
-              ny,
-              speed: sp1 + (sp2 - sp1) * t,
-              progress: (s + t) / segCount,
-            });
-          }
-        }
+      if (enabled && cfg.trail.enabled && mask.trail) {
+        const built = buildSamples(chain.nodes, cfg.trail);
+        // A collapsed chain is one sample: draw it as a zero-length capsule (the resting dot).
+        const samples = built.length === 1 ? [built[0], built[0]] : built;
 
         const drawLayer = (layer: LayerConfig) => {
           const sat = Math.min(Math.max(cfg.rainbow.saturation, 0), 1);
           const lit = Math.min(Math.max(cfg.rainbow.lightness, 0), 1);
-          let startC: [number, number, number, number] = layer.start_color;
-          let endC: [number, number, number, number] = cfg.trail.enable_gradient
-            ? layer.end_color
-            : layer.start_color;
+          let startC: Rgba = layer.start_color;
+          let endC: Rgba = cfg.trail.enable_gradient ? layer.end_color : layer.start_color;
           if (cfg.rainbow.enabled) {
             startC = hslToRgba(hue, sat, lit);
             startC[3] = layer.start_color[3];
@@ -499,36 +259,16 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
             endC[3] = cfg.trail.enable_gradient ? layer.end_color[3] : layer.start_color[3];
           }
           const gradient = cfg.trail.enable_gradient || cfg.rainbow.enabled;
+          const styles = samples.map((s) => layerSampleStyle(s, layer, cfg.trail, startC, endC, gradient));
+          const blurAt = (p: number) =>
+            Math.min(Math.max(layer.start_blur + (layer.end_blur - layer.start_blur) * p, 0), 1);
 
-          // Per-sample radius / colour / alpha, same formulas as `layer_sample_style` in Rust.
-          const styles = samples.map((s) => {
-            const fade = fadeCurve(s.progress, cfg.trail.fade_mode);
-            const normSpeed = Math.min(s.speed / 20, 1);
-            const velWidth = 1 + normSpeed * cfg.trail.velocity_width_mult;
-            const velAlpha = 1 + normSpeed * cfg.trail.velocity_alpha_mult;
-            const width = Math.max(
-              cfg.trail.min_width,
-              cfg.trail.cursor_size * layer.width_factor * fade * velWidth
-            );
-            const c = gradient ? lerpRgba(startC, endC, s.progress) : startC;
-            return {
-              r: width * 0.5,
-              alpha: Math.min(1, c[3] * layer.alpha_factor * fade * velAlpha),
-              rgb: [c[0], c[1], c[2]] as [number, number, number],
-            };
-          });
-
-          // Union-of-capsules per band, mirroring the GPU's max-coverage resolve: each capsule
-          // first erases what is under it and then paints itself, so overlapping capsules never
-          // blend twice. Head is painted last so it wins where the trail crosses itself.
-          const blur = Math.min(Math.max(layer.start_blur, 0), 1);
-          const bands: { radiusScale: number; alphaScale: number }[] =
-            blur > 0.15
-              ? [
-                  { radiusScale: 1, alphaScale: 0.4 }, // soft feather
-                  { radiusScale: 1 - blur * 0.7, alphaScale: 1 }, // solid core
-                ]
-              : [{ radiusScale: 1, alphaScale: 1 }];
+          // Union of capsules per band, approximating the GPU's max-coverage resolve: each
+          // capsule first erases what is under it and then paints itself, so overlapping
+          // capsules never blend twice. Head is painted last so it wins where the trail crosses
+          // itself. The feather is approximated by a soft outer band and a solid inner core.
+          const soft = layer.start_blur > 0.15 || layer.end_blur > 0.15;
+          const bands = soft ? ['feather', 'core'] : ['solid'];
 
           const union = ensureUnionCanvas(canvasRef.width, canvasRef.height);
           if (!union) return;
@@ -547,9 +287,12 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
               const b = samples[i + 1];
               const sa = styles[i];
               const sb = styles[i + 1];
-              const alpha = Math.min(1, (sa.alpha + sb.alpha) * 0.5 * band.alphaScale);
-              if (alpha < 0.004) continue;
-              const r = Math.max(0.35, (sa.r + sb.r) * 0.5 * band.radiusScale);
+              if (sa.color[3] < MIN_VISIBLE_ALPHA && sb.color[3] < MIN_VISIBLE_ALPHA) continue;
+              const blur = blurAt((a.progress + b.progress) * 0.5);
+              const radiusScale = band === 'core' ? 1 - blur * 0.7 : 1;
+              const alphaScale = band === 'feather' ? 0.4 : 1;
+              const alpha = Math.min(1, (sa.color[3] + sb.color[3]) * 0.5 * alphaScale);
+              const r = Math.max(0.35, (sa.radius + sb.radius) * 0.5 * radiusScale);
               uctx.lineWidth = r * 2;
               uctx.beginPath();
               uctx.moveTo(a.x, a.y);
@@ -560,9 +303,7 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
                 uctx.stroke();
                 uctx.globalCompositeOperation = 'source-over';
               }
-              uctx.strokeStyle = `rgba(${Math.round(sa.rgb[0] * 255)}, ${Math.round(
-                sa.rgb[1] * 255
-              )}, ${Math.round(sa.rgb[2] * 255)}, ${alpha})`;
+              uctx.strokeStyle = rgbaStr([sa.color[0], sa.color[1], sa.color[2], alpha]);
               uctx.stroke();
             }
 
@@ -597,14 +338,14 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
         }
       }
 
-      // Head
+      // Head (eased toward the pointer like the overlay's squishy head)
       if (enabled && cfg.head.enabled && mask.head) {
         ctx.save();
-        ctx.translate(mouseX, mouseY);
-        ctx.rotate(squish.angle);
+        ctx.translate(head.x, head.y);
+        ctx.rotate(head.angle);
         const base = cfg.head.size * 0.5;
-        const radX = base * (1 + squish.scale);
-        const radY = base * Math.max(0.3, 1 - squish.scale * 0.5);
+        const radX = base * (1 + head.scale);
+        const radY = base * Math.max(0.3, 1 - head.scale * 0.5);
         ctx.beginPath();
         ctx.ellipse(0, 0, radX, radY, 0, 0, Math.PI * 2);
         if (cfg.head.filled) {
@@ -697,7 +438,7 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
     if (!canvasRef) return;
     e.preventDefault();
     toWorld(e);
-    spawnClick(e.button, props.config());
+    spawnClick(DOM_TO_RENDERER_BUTTON[e.button] ?? 2, props.config());
   };
 
   return (
@@ -721,6 +462,8 @@ export const LivePreview: Component<LivePreviewProps> = (props) => {
 
       <canvas
         ref={canvasRef}
+        role="img"
+        aria-label="Live preview of the cursor trail and effects"
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onContextMenu={(e) => e.preventDefault()}

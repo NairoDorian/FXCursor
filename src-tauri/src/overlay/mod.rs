@@ -18,6 +18,9 @@ const SETTLE_FRAMES: u32 = 3;
 const DISPLAY_POLL: Duration = Duration::from_secs(1);
 /// Fallback when the OS does not report a refresh rate.
 const DEFAULT_REFRESH_HZ: f32 = 60.0;
+/// Consecutive failed acquisitions (occluded / locked screen / timeout) after which a settling
+/// frame counts as done anyway, so the loop can park instead of retrying forever.
+const MAX_SKIPPED_FRAMES: u32 = 10;
 
 /// Frame period for the current settings: `max_fps` when set, else the display refresh rate.
 fn frame_period(max_fps: u32, refresh_hz: f32) -> Duration {
@@ -27,6 +30,68 @@ fn frame_period(max_fps: u32, refresh_hz: f32) -> Duration {
         refresh_hz.clamp(24.0, 1000.0)
     };
     Duration::from_secs_f32(1.0 / hz)
+}
+
+/// Presentation mode for the current settings.
+///
+/// `Fifo` (vsync) by default, as in V3: sleep-based pacing alone is not phase-locked to the
+/// display, so with `Mailbox` the sleep jitter around each vblank makes the compositor drop one
+/// frame and repeat the next every so often. That reads as the trail stuttering *sometimes*.
+/// `Mailbox` is only worth it when the user caps above the refresh rate (lower latency),
+/// and only if the surface supports it (Metal, for one, does not).
+fn choose_present_mode(
+    supported: &[wgpu::PresentMode],
+    max_fps: u32,
+    refresh_hz: f32,
+) -> wgpu::PresentMode {
+    let above_refresh = max_fps > 0 && max_fps as f32 > refresh_hz + 1.0;
+    if above_refresh && supported.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else {
+        // Fifo is the one mode every surface is required to support.
+        wgpu::PresentMode::Fifo
+    }
+}
+
+/// True when the loop is paced by the swapchain itself: `Fifo` without a cap below the refresh
+/// rate. The next backbuffer is then acquired *before* the pointer is sampled, so acquisition
+/// blocks until the vblank that frees it and the frame shown one vblank later carries the
+/// freshest possible input. Sleep-based pacing oversleeps by up to a timer tick; with a period
+/// equal to the refresh interval that drift made the loop miss a vblank every ~20 frames at
+/// 144 Hz (a repeated frame = visible judder).
+fn vsync_paced(mode: wgpu::PresentMode, max_fps: u32, refresh_hz: f32) -> bool {
+    let capped_below = max_fps > 0 && (max_fps as f32) < refresh_hz - 1.0;
+    mode == wgpu::PresentMode::Fifo && !capped_below
+}
+
+/// Surface size for the overlay, clamped to what the device can allocate. A virtual desktop
+/// larger than `max_texture_dimension_2d` (e.g. three 4K monitors side by side on an adapter
+/// limited to 8192) is clipped instead of panicking in `Surface::configure`.
+fn surface_extent(width: u32, height: u32, max_dim: u32) -> (u32, u32) {
+    (width.clamp(1, max_dim), height.clamp(1, max_dim))
+}
+
+/// Acquires the next swapchain texture, reconfiguring on `Lost`/`Outdated`. `None` means
+/// "skip this frame"; the reason is logged at debug level.
+fn acquire_frame(
+    surface: &wgpu::Surface<'_>,
+    device: &wgpu::Device,
+    surface_config: &wgpu::SurfaceConfiguration,
+) -> Option<wgpu::SurfaceTexture> {
+    match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
+            Some(t)
+        }
+        wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
+            log::debug!("[overlay] surface lost/outdated; reconfiguring");
+            surface.configure(device, surface_config);
+            None
+        }
+        other => {
+            log::debug!("[overlay] frame skipped: {other:?}");
+            None
+        }
+    }
 }
 
 /// Moves and resizes the overlay window to cover `bounds` (physical pixels), then waits briefly
@@ -81,7 +146,7 @@ impl OverlayState {
         let mut bounds = display::virtual_bounds(&app_handle);
         fit_overlay_window(&window, bounds);
 
-        let refresh_hz = display::refresh_rate_hz().unwrap_or(DEFAULT_REFRESH_HZ);
+        let mut refresh_hz = display::refresh_rate_hz().unwrap_or(DEFAULT_REFRESH_HZ);
         log::info!("[overlay] display refresh {refresh_hz:.0} Hz (frame pacing target)");
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -93,7 +158,9 @@ impl OverlayState {
                 wgpu::Backends::VULKAN
             },
             flags: wgpu::InstanceFlags::default(),
-            backend_options: Default::default(),
+            // Honour WGPU_* overrides (e.g. WGPU_DX12_PRESENTATION_SYSTEM=Visual, which gives a
+            // DX12 swapchain the pre-multiplied alpha a transparent overlay needs).
+            backend_options: wgpu::BackendOptions::from_env_or_default(),
             display: None,
             memory_budget_thresholds: Default::default(),
         });
@@ -136,22 +203,30 @@ impl OverlayState {
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                 label: Some("overlay_device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                // The overlay spans the whole virtual desktop: the default 8192 px texture limit
+                // is too small for 3×4K / 2×5K layouts, so ask for what the adapter offers.
+                required_limits: adapter.limits(),
                 memory_hints: Default::default(),
                 trace: Default::default(),
                 experimental_features: Default::default(),
             }))?;
 
+        let max_dim = device.limits().max_texture_dimension_2d;
         let size = window
             .inner_size()
             .unwrap_or(tauri::PhysicalSize::new(bounds.2, bounds.3));
         let surface_caps = surface.get_capabilities(&adapter);
+        // A plain UNORM target, as Windhawk's D3D mod (B8G8R8A8_UNORM): colours are authored in
+        // sRGB and DWM composites pre-multiplied values in that same encoded space. On an *_Srgb
+        // target the hardware encodes `c·a` after blending, so a half-transparent white glow edge
+        // was stored as ~0.73 with alpha 0.5 (invalid pre-multiplied) and DWM drew it too bright.
         let surface_format = surface_caps
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+            .find(|f| !f.is_srgb())
+            .or_else(|| surface_caps.formats.first().copied())
+            .ok_or("Surface reports no supported formats for this adapter")?;
 
         let alpha_mode = if surface_caps
             .alpha_modes
@@ -163,19 +238,45 @@ impl OverlayState {
             .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
         {
             wgpu::CompositeAlphaMode::PostMultiplied
+        } else if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::Inherit)
+        {
+            wgpu::CompositeAlphaMode::Inherit
         } else {
-            surface_caps.alpha_modes[0]
+            // An opaque surface would cover every monitor in black, above all windows.
+            return Err(format!(
+                "{:?} surface has no transparent composite alpha mode ({:?}); refusing to cover the desktop",
+                adapter_info.backend, surface_caps.alpha_modes
+            )
+            .into());
         };
+        log::info!("[overlay] surface {surface_format:?}, alpha {alpha_mode:?}");
 
+        let initial_max_fps = config.lock().map(|c| c.general.max_fps).unwrap_or(0);
+        let (surface_w, surface_h) = surface_extent(size.width, size.height, max_dim);
+        if (surface_w, surface_h) != (size.width, size.height) {
+            log::warn!(
+                "[overlay] desktop {}x{} exceeds the GPU texture limit {max_dim}; clipping",
+                size.width,
+                size.height
+            );
+        }
         let mut surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode: wgpu::PresentMode::Mailbox,
+            width: surface_w,
+            height: surface_h,
+            present_mode: choose_present_mode(
+                &surface_caps.present_modes,
+                initial_max_fps,
+                refresh_hz,
+            ),
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            // One queued frame: with Fifo, acquisition then waits for the previous frame to
+            // reach the screen, which is what phase-locks the loop to vblank.
+            desired_maximum_frame_latency: 1,
             color_space: Default::default(),
         };
 
@@ -195,6 +296,14 @@ impl OverlayState {
         let mut last_mouse = (f32::NAN, f32::NAN);
         let mut seen_generation = input.generation();
         let mut last_display_check = Instant::now();
+        // True when the previous iteration parked in the idle wait (see step 3).
+        let mut resumed_from_park = false;
+        // Backbuffer acquired at the top of a vsync-paced iteration, presented in step 5.
+        let mut pending_frame: Option<wgpu::SurfaceTexture> = None;
+        // Effects were disabled and the overlay has been cleared: nothing to redraw on input.
+        let mut cleared_while_disabled = false;
+        // Consecutive frames that could not be acquired (see MAX_SKIPPED_FRAMES).
+        let mut skipped_frames: u32 = 0;
 
         // Frame statistics window (published to `RuntimeInfo` every ~500 ms).
         let runtime = app_handle.try_state::<crate::RuntimeInfo>();
@@ -238,6 +347,13 @@ impl OverlayState {
         };
 
         loop {
+            // ---- 0. Vsync pacing: wait for the next backbuffer before sampling the pointer ---
+            if settle_frames > 0
+                && pending_frame.is_none()
+                && vsync_paced(surface_config.present_mode, last_config.general.max_fps, refresh_hz)
+            {
+                pending_frame = acquire_frame(&surface, &device, &surface_config);
+            }
             let frame_start = Instant::now();
 
             // ---- 1. Gather input ------------------------------------------------------------
@@ -251,46 +367,131 @@ impl OverlayState {
             }
             let frame = input.take_frame();
 
-            let delta = frame_start.duration_since(last_frame).as_secs_f32();
+            let elapsed = frame_start.duration_since(last_frame).as_secs_f32();
             last_frame = frame_start;
 
             // ---- 2. Detect what changed -----------------------------------------------------
             let mut surface_changed = false;
 
-            // Monitor layout / DPI changes: refit the window to the new virtual desktop.
+            // Monitor layout / DPI changes: refit the window to the new virtual desktop. The
+            // window queries go through the Tauri main thread (a blocking round-trip), so they
+            // run once per DISPLAY_POLL, never per frame: a per-frame `inner_size()` stalled the
+            // trail whenever the Studio kept the main thread busy (slider drags, diagnostics).
             if frame_start.duration_since(last_display_check) >= DISPLAY_POLL {
                 last_display_check = frame_start;
+                // Cursor schemes / pointer size change shapes behind unchanged handles.
+                crate::cursor::invalidate_cache();
+                // The refresh rate can change at runtime (display settings, a new primary).
+                if let Some(hz) = display::refresh_rate_hz()
+                    && (hz - refresh_hz).abs() > 0.5
+                {
+                    log::info!("[overlay] display refresh {refresh_hz:.0} → {hz:.0} Hz");
+                    refresh_hz = hz;
+                    let mode = choose_present_mode(
+                        &surface_caps.present_modes,
+                        last_config.general.max_fps,
+                        refresh_hz,
+                    );
+                    if mode != surface_config.present_mode {
+                        surface_config.present_mode = mode;
+                        pending_frame = None;
+                        surface.configure(&device, &surface_config);
+                    }
+                }
                 let now_bounds = display::virtual_bounds(&app_handle);
-                if now_bounds != bounds {
-                    log::info!("[overlay] virtual desktop changed to {now_bounds:?}; refitting");
+                // A DPI change on the overlay's monitor makes the window system resize or move
+                // the window even when the desktop bounds stay the same: refit then too.
+                let window_rect = window
+                    .outer_position()
+                    .ok()
+                    .zip(window.inner_size().ok())
+                    .map(|(p, s)| (p.x, p.y, s.width, s.height));
+                if now_bounds != bounds || window_rect.is_some_and(|r| r != bounds) {
+                    log::info!(
+                        "[overlay] desktop {now_bounds:?} / window {window_rect:?}; refitting"
+                    );
                     bounds = now_bounds;
                     fit_overlay_window(&window, bounds);
                     renderer.virtual_origin = (bounds.0 as f32, bounds.1 as f32);
+                    renderer.hud_rect = Some(display::primary_rect());
                     surface_changed = true;
                 }
-            }
-
-            if let Ok(current_size) = window.inner_size()
-                && current_size.width > 0
-                && current_size.height > 0
-                && (current_size.width != surface_config.width
-                    || current_size.height != surface_config.height)
-            {
-                surface_config.width = current_size.width;
-                surface_config.height = current_size.height;
-                surface.configure(&device, &surface_config);
-                surface_changed = true;
+                if let Ok(current_size) = window.inner_size()
+                    && current_size.width > 0
+                    && current_size.height > 0
+                {
+                    let (w, h) = surface_extent(current_size.width, current_size.height, max_dim);
+                    if (w, h) != (surface_config.width, surface_config.height) {
+                        surface_config.width = w;
+                        surface_config.height = h;
+                        pending_frame = None; // cannot reconfigure while a frame is held
+                        surface.configure(&device, &surface_config);
+                        surface_changed = true;
+                    }
+                }
             }
 
             let current_config = config.lock().map(|c| c.clone()).unwrap_or_default();
             let config_changed = current_config != last_config;
             if config_changed {
                 last_config = current_config.clone();
+                // A new frame cap can move the loop above / below the refresh rate.
+                let mode = choose_present_mode(
+                    &surface_caps.present_modes,
+                    current_config.general.max_fps,
+                    refresh_hz,
+                );
+                if mode != surface_config.present_mode {
+                    log::info!("[overlay] present mode {mode:?}");
+                    surface_config.present_mode = mode;
+                    pending_frame = None;
+                    surface.configure(&device, &surface_config);
+                    surface_changed = true;
+                }
             }
-            let input_changed = (frame.x, frame.y) != last_mouse || !frame.clicks.is_empty();
+            let period = frame_period(current_config.general.max_fps, refresh_hz);
+            // While effects are off and the overlay is already clear, pointer motion changes
+            // nothing on screen: do not wake the GPU for it.
+            let input_changed = ((frame.x, frame.y) != last_mouse || !frame.clicks.is_empty())
+                && !(cleared_while_disabled && !current_config.enabled);
             last_mouse = (frame.x, frame.y);
+            if current_config.enabled {
+                cleared_while_disabled = false;
+            }
+
+            // ---- 3a. GPU cursor bypass: refresh the extracted shape and mirror hide state --
+            // Runs even while parked (the loop passes through here every IDLE_WAIT) so a
+            // cursor-shape change under a still pointer repaints and the system-arrow hide
+            // tracks config toggles without waiting for motion.
+            let want_gpu_cursor = current_config.enabled && current_config.gpu_cursor.enabled;
+            if want_gpu_cursor {
+                let repaint = match crate::cursor::extract_current() {
+                    crate::cursor::CursorSnapshot::Shape(shape) => {
+                        renderer.set_cursor_shape(&device, &queue, &shape)
+                            | renderer.set_cursor_visible(true)
+                    }
+                    crate::cursor::CursorSnapshot::Hidden => renderer.set_cursor_visible(false),
+                    crate::cursor::CursorSnapshot::Unavailable => false,
+                };
+                if repaint {
+                    settle_frames = SETTLE_FRAMES;
+                }
+                crate::cursor::set_arrow_hidden(current_config.gpu_cursor.hide_system_cursor);
+            } else {
+                renderer.clear_cursor_shape();
+                crate::cursor::set_arrow_hidden(false);
+            }
 
             // ---- 3. Simulate ----------------------------------------------------------------
+            // Time spent parked is idle time, not motion time: the pointer position that woke
+            // the loop has only just arrived. Integrating the whole park (up to IDLE_WAIT)
+            // toward it would snap the trail forward on the first frame of every movement.
+            let delta = if resumed_from_park {
+                elapsed.min(period.as_secs_f32())
+            } else {
+                elapsed
+            };
+            resumed_from_park = false;
             for click in &frame.clicks {
                 renderer.spawn_click(click.button, click.x, click.y, &current_config);
             }
@@ -369,6 +570,7 @@ impl OverlayState {
 
             // ---- 4. Idle: park until input/config activity (bounded) ------------------------
             if settle_frames == 0 {
+                pending_frame = None; // dropping an acquired frame without presenting discards it
                 if stats_last_state != "idle"
                     || stats_window_start.elapsed() > Duration::from_millis(500)
                 {
@@ -386,42 +588,51 @@ impl OverlayState {
                     stats_cpu_ms = 0.0;
                 }
                 seen_generation = input.wait_for_activity(seen_generation, IDLE_WAIT);
+                resumed_from_park = true;
                 continue;
             }
-            settle_frames -= 1;
 
             // ---- 5. Render ------------------------------------------------------------------
             let cpu_start = Instant::now();
-            match surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(frame_tex)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(frame_tex) => {
-                    let view = frame_tex
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-                    if current_config.enabled {
-                        renderer.render(
-                            &device,
-                            &queue,
-                            &view,
-                            surface_config.width,
-                            surface_config.height,
-                            &current_config,
-                        );
-                    } else {
-                        renderer.clear_active_state();
-                        renderer.render_clear(&device, &queue, &view);
-                    }
-                    queue.present(frame_tex);
+            let frame_tex = pending_frame
+                .take()
+                .or_else(|| acquire_frame(&surface, &device, &surface_config));
+            if let Some(frame_tex) = frame_tex {
+                let view = frame_tex
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                if current_config.enabled {
+                    renderer.render(
+                        &device,
+                        &queue,
+                        &view,
+                        surface_config.width,
+                        surface_config.height,
+                        &current_config,
+                    );
+                } else {
+                    renderer.clear_active_state();
+                    renderer.render_clear(&device, &queue, &view);
+                    cleared_while_disabled = true;
                 }
-                wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
-                    surface.configure(&device, &surface_config);
+                queue.present(frame_tex);
+                // Only a presented frame counts toward settling: a skipped one (timeout,
+                // occlusion, lost surface) must not leave a stale image on screen.
+                settle_frames -= 1;
+                skipped_frames = 0;
+                stats_frames += 1;
+                stats_cpu_ms += cpu_start.elapsed().as_secs_f32() * 1000.0;
+            } else {
+                // Nothing blocked in the failed acquire: back off for a frame instead of
+                // spinning, and stop insisting once the surface keeps refusing (locked screen).
+                skipped_frames += 1;
+                if skipped_frames >= MAX_SKIPPED_FRAMES {
+                    settle_frames = settle_frames.saturating_sub(1);
                 }
-                _ => {}
+                std::thread::sleep(period);
             }
 
             // ---- 6. Frame statistics ----------------------------------------------------------
-            stats_frames += 1;
-            stats_cpu_ms += cpu_start.elapsed().as_secs_f32() * 1000.0;
             stats_last_state = if is_animating { "active" } else { "settling" };
             let window_elapsed = stats_window_start.elapsed();
             if window_elapsed >= Duration::from_millis(500) {
@@ -449,20 +660,19 @@ impl OverlayState {
             }
 
             // ---- 7. Pace to the display (or the configured cap) -----------------------------
-            let period = frame_period(current_config.general.max_fps, refresh_hz);
-            let deadline = frame_start + period;
-            let now = Instant::now();
-            if is_animating {
+            // Vsync-paced: the acquire at the top of the next iteration blocks until vblank.
+            // Otherwise (a cap below the refresh rate, or Mailbox above it) sleep out the
+            // period. Settling frames are paced the same way: waking on every hook event ran
+            // the loop at the mouse report rate (up to 8 kHz).
+            if !vsync_paced(surface_config.present_mode, current_config.general.max_fps, refresh_hz)
+            {
+                let deadline = frame_start + period;
+                let now = Instant::now();
                 if deadline > now {
                     std::thread::sleep(deadline - now);
                 }
-            } else {
-                // Settling: wait for more input rather than spinning.
-                let wait = deadline
-                    .saturating_duration_since(now)
-                    .max(Duration::from_millis(1));
-                seen_generation = input.wait_for_activity(seen_generation, wait);
             }
+            seen_generation = input.generation();
         }
     }
 }
@@ -478,5 +688,33 @@ mod tests {
         // Out-of-range values are clamped instead of producing absurd periods.
         assert!((frame_period(5, 60.0).as_secs_f32() - 1.0 / 24.0).abs() < 1e-6);
         assert!((frame_period(0, 0.0).as_secs_f32() - 1.0 / 24.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn present_mode_is_vsync_unless_capped_above_refresh() {
+        use wgpu::PresentMode::{Fifo, Mailbox};
+        let both = [Fifo, Mailbox];
+        assert_eq!(choose_present_mode(&both, 0, 144.0), Fifo, "uncapped follows vblank");
+        assert_eq!(choose_present_mode(&both, 60, 144.0), Fifo, "cap below refresh");
+        assert_eq!(choose_present_mode(&both, 144, 144.0), Fifo, "cap at refresh");
+        assert_eq!(choose_present_mode(&both, 240, 144.0), Mailbox, "cap above refresh");
+        // Never request a mode the surface does not support.
+        assert_eq!(choose_present_mode(&[Fifo], 240, 144.0), Fifo);
+    }
+
+    #[test]
+    fn vsync_pacing_applies_unless_capped_below_refresh() {
+        use wgpu::PresentMode::{Fifo, Mailbox};
+        assert!(vsync_paced(Fifo, 0, 144.0), "uncapped default");
+        assert!(vsync_paced(Fifo, 144, 144.0), "cap at the refresh rate");
+        assert!(!vsync_paced(Fifo, 60, 144.0), "a lower cap sleeps out its own period");
+        assert!(!vsync_paced(Mailbox, 240, 144.0), "mailbox never blocks");
+    }
+
+    #[test]
+    fn surface_extent_is_clamped_to_the_device_limit() {
+        assert_eq!(surface_extent(3840 * 3, 2160, 8192), (8192, 2160));
+        assert_eq!(surface_extent(0, 0, 8192), (1, 1));
+        assert_eq!(surface_extent(2560, 1440, 16384), (2560, 1440));
     }
 }

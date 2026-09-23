@@ -31,7 +31,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 | CPU (idle, cursor still) | < 0.5 %            | Loop wakes every 15 ms, does physics on 80 nodes, skips GPU work           |
 | CPU (active)             | < 2 %              | 4 ms loop, CPU ribbon build for 4 layers                                  |
 | GPU (idle)               | 0 %                | ✅ no submissions after 3 settle frames                                    |
-| Frame pacing             | Mailbox, ≤ 2 frames latency | ✅                                                                |
+| Frame pacing             | Fifo, vblank-locked, 1 queued frame | ✅ since 2026-09-23 (was Mailbox + sleep: periodic repeated frames) |
 | Input latency            | < 1 frame          | ✅ Windows: `WH_MOUSE_LL` hook queues clicks; non-Windows polls `device_query` |
 | Startup                  | < 1.0 s            | ~1 s dev; not measured release                                            |
 
@@ -45,7 +45,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 
 ### Graphics: wgpu 30
 - Backends `DX12 | VULKAN` on Windows (adapter choice left to `HighPerformance` preference; Vulkan was picked on the dev machine), Metal on macOS, Vulkan on Linux.
-- Pre-multiplied alpha composite mode when available, `Mailbox` presentation, `desired_maximum_frame_latency: 2`.
+- Pre-multiplied alpha composite mode (an opaque-only surface aborts), non-sRGB `Bgra8Unorm` target, `Fifo` presentation with `desired_maximum_frame_latency: 1` (`Mailbox` only for a cap above the refresh rate).
 - Surface loss/outdated → reconfigure in place.
 
 ### Input: `device_query` 4

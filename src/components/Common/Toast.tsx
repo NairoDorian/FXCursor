@@ -62,6 +62,7 @@ export const ToastContainer: Component = () => {
               />
               <span>{item.message}</span>
               <button
+                aria-label="Dismiss notification"
                 style="background: transparent; border: none; color: #888; cursor: pointer; padding: 2px 6px; margin-left: 8px;"
                 onClick={() => removeToast(item.id)}
               >

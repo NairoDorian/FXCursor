@@ -1,6 +1,10 @@
 import { render } from '@solidjs/web';
 import App from './App';
+import { installHardening } from './lib/hardening';
 import './index.css';
+
+// Dev builds keep the default behaviour for inspection.
+if (import.meta.env.PROD) installHardening();
 
 const root = document.getElementById('root');
 

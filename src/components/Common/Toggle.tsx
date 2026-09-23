@@ -3,6 +3,8 @@ import { Component } from 'solid-js';
 interface ToggleProps {
   label?: string;
   sub?: string;
+  /** Accessible name when the toggle has no visible `label` (e.g. a card-header switch). */
+  ariaLabel?: string;
   checked: boolean;
   onChange: (val: boolean) => void;
 }
@@ -19,6 +21,7 @@ export const Toggle: Component<ToggleProps> = (props) => {
       <label class="switch">
         <input
           type="checkbox"
+          aria-label={props.ariaLabel ?? props.label}
           checked={props.checked}
           onChange={(e) => props.onChange(e.currentTarget.checked)}
         />

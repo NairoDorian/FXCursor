@@ -57,8 +57,9 @@ Built with **Tauri 2**, **Bun**, **SolidJS 2**, **TypeScript 7**, **wgpu 30** (D
 - **Effect modes**: Full, Ribbon only, Click effects only, Satellites only, Minimal (core + spine), switchable from the header.
 - **Telemetry**: live fps, CPU per frame and geometry counts in the Developer Hub; Rust logs stream into the Dev Console.
 - **Idle friendly**: GPU submissions stop when nothing on screen can change.
-- **Trail physics that never loops at the pointer**: the head follows the jitter-filtered pointer without overshoot, the first `lead_nodes` nodes are pursuit followers, the rest is a spring-damper chain, and no node may overtake its predecessor — stops, reversals and sharp turns keep a clean rounded tip. Fixed 1/120 s sub-steps; frame hitches up to 100 ms are integrated in full.
+- **Legacy-faithful trail**: an optional LazyBrush dead-zone filters the pointer, the head is a Windhawk spring-damper toward that brush, the body is a spring chain with 0.3 second-neighbour coupling on a **1/120 s reference frame** (Windhawk `kReferenceFrameTime`), and a **512 px teleport-only** clamp bounds stretch on monitor jumps. As in Windhawk, V3 and the TD trail, width, fade and blur follow the **node index**, so the ribbon retracts into the cursor after a stop and rests as a 4-layer dot. Frames are **vsync-locked** (`Fifo`) with the pointer sampled right after the vblank; the Studio preview runs the same math (`src/lib/trail.ts`, tested against a Rust reference trace). **Defaults are trail-only** (`effect_mode: Ribbon`; head, ripples, particles, satellites off).
 - **On-overlay FPS HUD** (`fps_counter`): frames per second drawn on the overlay with a 3×5 bitmap font, anchored to any corner.
+- **GPU cursor bypass** (`gpu_cursor`): the system cursor shape is extracted and redrawn on the overlay — rotates with movement, bounces on click, and can hide the real cursor (restored on exit/panic).
 - **Custom presets**: save the current look under a name; user presets live next to `config.json` and appear beside the six built-ins.
 - **In-window shortcuts**: `Ctrl+S` save, `Ctrl+E` toggle effects, `Ctrl+1…9` switch tabs (cheat-sheet in the Hotkeys tab); the tray tooltip shows the live state.
 - **Overlay snapshots**: Developer Hub button or `fxcursor.exe --capture out.png --capture-size 1280x720` while the app runs (screen-capture tools cannot see the GPU overlay). Add `--capture-burst 30 --capture-interval 50` for a flip-book of a transient; `scripts/snapshots/` drives the pointer through stops, reversals, turns, hairpins and loops and builds contact sheets.
@@ -162,7 +163,7 @@ FXCursor/
 │       ├── capture.rs          # overlay snapshots and bursts (offscreen render + readback)
 │       ├── display.rs          # virtual desktop bounds, refresh rate, timer resolution
 │       ├── input/{mod.rs,windows.rs}   # InputHub + WH_MOUSE_LL hook
-│       ├── logger.rs · portable.rs · panic_log.rs · webview_hardening.rs · tracker.rs
+│       ├── logger.rs · portable.rs · panic_log.rs · tracker.rs (non-Windows polling)
 │       └── overlay/mod.rs      # surface, render loop, pacing, idle park, frame stats
 ├── crates/
 │   ├── fxcursor-protocol/      # AppConfig, presets, self-healing deserializer (shared)

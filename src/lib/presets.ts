@@ -1,10 +1,11 @@
 /**
  * Configuration types are generated from the Rust structs by tauri-specta into `./bindings`
  * (`src-tauri/src/lib.rs` → `crates/fxcursor-protocol/src/config.rs`). This module only keeps
- * the TypeScript defaults/presets mirror used in browser preview mode; `test/config-parity.test.ts`
- * guards the defaults against drift.
+ * the TypeScript defaults mirror used in browser preview mode (`test/config-parity.test.ts` guards
+ * it against drift) and re-exports the built-in presets generated from Rust.
  */
 import type { AppConfig } from './bindings';
+import builtinPresets from './generated/builtin_presets.json';
 
 export type {
   AppConfig,
@@ -18,12 +19,13 @@ export type {
   SatelliteConfig,
   RainbowConfig,
   FpsCounterConfig,
+  GpuCursorConfig,
 } from './bindings';
 
 export function getDefaultConfig(): AppConfig {
   return {
     enabled: true,
-    effect_mode: 'FourLayerGlow',
+    effect_mode: 'Ribbon',
     general: {
       autostart: false,
       minimize_to_tray: true,
@@ -39,7 +41,9 @@ export function getDefaultConfig(): AppConfig {
       damping: 30.0,
       head_spring: 50.0,
       head_damping: 30.0,
-      lead_nodes: 4,
+      lazy_enabled: false,
+      lazy_radius: 30.0,
+      lazy_friction: 0.4,
       cursor_size: 40.0,
       min_width: 2.0,
       velocity_width_mult: 0.5,
@@ -88,7 +92,8 @@ export function getDefaultConfig(): AppConfig {
       ],
     },
     head: {
-      enabled: true,
+      // Trail-only default (mirrors Rust / V3): squishy head is opt-in.
+      enabled: false,
       size: 18.0,
       squish_intensity: 3.0,
       squish_smoothing: 50.0,
@@ -97,7 +102,8 @@ export function getDefaultConfig(): AppConfig {
       thickness: -1.0,
     },
     ripple: {
-      enabled: true,
+      // Trail-only default: click shockwaves are opt-in.
+      enabled: false,
       max_diameter: 100.0,
       duration_ms: 600,
       start_width: 8.0,
@@ -106,7 +112,8 @@ export function getDefaultConfig(): AppConfig {
       color_middle: [1.0, 1.0, 0.4, 1.0],
     },
     particles: {
-      enabled: true,
+      // Trail-only default: click particle bursts are opt-in.
+      enabled: false,
       count_per_click: 16,
       duration_ms: 500,
       base_speed: 300.0,
@@ -138,340 +145,35 @@ export function getDefaultConfig(): AppConfig {
       align_right: true,
       align_bottom: false,
     },
+    gpu_cursor: {
+      enabled: false,
+      hide_system_cursor: true,
+      rotate_with_movement: true,
+      rotation_smoothing: 5.0,
+      click_scale_percent: 150.0,
+      click_scale_duration_ms: 200,
+    },
   };
 }
 
-export function getPresetById(id: string): AppConfig | null {
-  const base = getDefaultConfig();
-  switch (id) {
-    case 'master_4layer':
-      return base;
-
-    case 'neon_cyberpunk':
-      return {
-        ...base,
-        general: { ...base.general, selected_preset: 'neon_cyberpunk' },
-        trail: {
-          ...base.trail,
-          length: 90,
-          spring: 60.0,
-          damping: 28.0,
-          cursor_size: 44.0,
-          layers: [
-            {
-              enabled: true,
-              start_color: [0.0, 0.95, 1.0, 1.0],
-              end_color: [0.6, 0.0, 1.0, 0.0],
-              width_factor: 1.8,
-              alpha_factor: 1.0,
-              start_blur: 0.45,
-              end_blur: 0.6,
-            },
-            {
-              enabled: true,
-              start_color: [0.4, 0.0, 0.9, 1.0],
-              end_color: [0.1, 0.0, 0.3, 0.0],
-              width_factor: 1.1,
-              alpha_factor: 1.0,
-              start_blur: 0.15,
-              end_blur: 0.15,
-            },
-            {
-              enabled: true,
-              start_color: [0.0, 1.0, 0.85, 1.0],
-              end_color: [0.0, 0.8, 1.0, 0.0],
-              width_factor: 0.55,
-              alpha_factor: 1.0,
-              start_blur: 0.08,
-              end_blur: 0.08,
-            },
-            {
-              enabled: true,
-              start_color: [0.05, 0.0, 0.15, 1.0],
-              end_color: [0.05, 0.0, 0.15, 1.0],
-              width_factor: 0.18,
-              alpha_factor: 1.0,
-              start_blur: 0.05,
-              end_blur: 0.05,
-            },
-          ],
-        },
-        head: {
-          ...base.head,
-          size: 20.0,
-          squish_intensity: 3.5,
-          color: [0.0, 0.95, 1.0, 1.0],
-        },
-        ripple: {
-          ...base.ripple,
-          max_diameter: 120.0,
-          color_left: [0.0, 0.95, 1.0, 1.0],
-          color_right: [1.0, 0.0, 0.6, 1.0],
-          color_middle: [0.6, 0.0, 1.0, 1.0],
-        },
-        particles: {
-          ...base.particles,
-          count_per_click: 24,
-          base_speed: 350.0,
-          color: [0.0, 0.95, 1.0, 1.0],
-        },
-      };
-
-    case 'razor_spine':
-      return {
-        ...base,
-        general: { ...base.general, selected_preset: 'razor_spine' },
-        trail: {
-          ...base.trail,
-          length: 50,
-          spring: 80.0,
-          damping: 35.0,
-          cursor_size: 28.0,
-          fade_mode: 1,
-          layers: [
-            {
-              enabled: false,
-              start_color: [1, 1, 1, 1],
-              end_color: [1, 1, 1, 0],
-              width_factor: 1,
-              alpha_factor: 1,
-              start_blur: 0.1,
-              end_blur: 0.1,
-            },
-            {
-              enabled: true,
-              start_color: [0.0, 0.0, 0.0, 0.9],
-              end_color: [0.0, 0.0, 0.0, 0.0],
-              width_factor: 0.4,
-              alpha_factor: 1.0,
-              start_blur: 0.04,
-              end_blur: 0.04,
-            },
-            {
-              enabled: true,
-              start_color: [1.0, 1.0, 1.0, 1.0],
-              end_color: [1.0, 1.0, 1.0, 0.0],
-              width_factor: 0.22,
-              alpha_factor: 1.0,
-              start_blur: 0.02,
-              end_blur: 0.02,
-            },
-            {
-              enabled: true,
-              start_color: [0.0, 0.0, 0.0, 1.0],
-              end_color: [0.0, 0.0, 0.0, 1.0],
-              width_factor: 0.08,
-              alpha_factor: 1.0,
-              start_blur: 0.01,
-              end_blur: 0.01,
-            },
-          ],
-        },
-        head: {
-          ...base.head,
-          size: 14.0,
-          squish_intensity: 2.0,
-          filled: false,
-          thickness: 2.0,
-        },
-        particles: {
-          ...base.particles,
-          enabled: false,
-        },
-      };
-
-    case 'celestial_orbit':
-      return {
-        ...base,
-        general: { ...base.general, selected_preset: 'celestial_orbit' },
-        trail: {
-          ...base.trail,
-          length: 70,
-          cursor_size: 36.0,
-          layers: [
-            {
-              enabled: true,
-              start_color: [0.9, 0.7, 1.0, 0.9],
-              end_color: [0.4, 0.2, 0.8, 0.0],
-              width_factor: 1.4,
-              alpha_factor: 1.0,
-              start_blur: 0.35,
-              end_blur: 0.45,
-            },
-            {
-              enabled: true,
-              start_color: [0.2, 0.0, 0.4, 0.9],
-              end_color: [0.1, 0.0, 0.2, 0.0],
-              width_factor: 0.85,
-              alpha_factor: 1.0,
-              start_blur: 0.1,
-              end_blur: 0.1,
-            },
-            {
-              enabled: true,
-              start_color: [1.0, 0.95, 0.8, 1.0],
-              end_color: [1.0, 0.7, 0.3, 0.0],
-              width_factor: 0.45,
-              alpha_factor: 1.0,
-              start_blur: 0.08,
-              end_blur: 0.08,
-            },
-            {
-              enabled: true,
-              start_color: [0.3, 0.1, 0.0, 1.0],
-              end_color: [0.3, 0.1, 0.0, 1.0],
-              width_factor: 0.12,
-              alpha_factor: 1.0,
-              start_blur: 0.08,
-              end_blur: 0.08,
-            },
-          ],
-        },
-        head: {
-          ...base.head,
-          size: 16.0,
-          color: [1.0, 0.95, 0.8, 1.0],
-        },
-        satellites: {
-          enabled: true,
-          count: 4,
-          orbit_diameter: 55.0,
-          size: 5.5,
-          speed: 3.5,
-          dual_ring: true,
-          show_orbit_ring: true,
-          orbit_ring_thickness: 1.2,
-          color: [1.0, 0.88, 0.4, 0.95],
-        },
-      };
-
-    case 'particle_firestorm':
-      return {
-        ...base,
-        general: { ...base.general, selected_preset: 'particle_firestorm' },
-        trail: {
-          ...base.trail,
-          length: 85,
-          cursor_size: 42.0,
-          fade_mode: 2,
-          layers: [
-            {
-              enabled: true,
-              start_color: [1.0, 0.4, 0.0, 1.0],
-              end_color: [0.8, 0.1, 0.0, 0.0],
-              width_factor: 1.6,
-              alpha_factor: 1.0,
-              start_blur: 0.4,
-              end_blur: 0.55,
-            },
-            {
-              enabled: true,
-              start_color: [0.3, 0.05, 0.0, 1.0],
-              end_color: [0.1, 0.0, 0.0, 0.0],
-              width_factor: 0.95,
-              alpha_factor: 1.0,
-              start_blur: 0.12,
-              end_blur: 0.12,
-            },
-            {
-              enabled: true,
-              start_color: [1.0, 0.9, 0.2, 1.0],
-              end_color: [1.0, 0.3, 0.0, 0.0],
-              width_factor: 0.5,
-              alpha_factor: 1.0,
-              start_blur: 0.1,
-              end_blur: 0.1,
-            },
-            {
-              enabled: true,
-              start_color: [0.2, 0.0, 0.0, 1.0],
-              end_color: [0.2, 0.0, 0.0, 1.0],
-              width_factor: 0.15,
-              alpha_factor: 1.0,
-              start_blur: 0.08,
-              end_blur: 0.08,
-            },
-          ],
-        },
-        head: {
-          ...base.head,
-          color: [1.0, 0.8, 0.1, 1.0],
-        },
-        particles: {
-          enabled: true,
-          count_per_click: 36,
-          duration_ms: 650,
-          base_speed: 420.0,
-          gravity: 180.0,
-          friction: 0.91,
-          size: 4.0,
-          color: [1.0, 0.6, 0.1, 1.0],
-        },
-      };
-
-    case 'rainbow_aurora':
-      return {
-        ...base,
-        general: { ...base.general, selected_preset: 'rainbow_aurora' },
-        rainbow: {
-          enabled: true,
-          speed: 2.5,
-          saturation: 1.0,
-          lightness: 0.55,
-        },
-      };
-
-    default:
-      return null;
-  }
+/** A built-in preset exactly as the Rust backend lists and applies it. */
+export interface BuiltinPreset {
+  id: string;
+  name: string;
+  description: string;
+  config: AppConfig;
 }
 
-export const BUILTIN_PRESET_IDS = [
-  'master_4layer',
-  'neon_cyberpunk',
-  'razor_spine',
-  'celestial_orbit',
-  'particle_firestorm',
-  'rainbow_aurora',
-] as const;
+/**
+ * Built-in presets, generated from `crates/fxcursor-protocol/src/presets.rs` by
+ * `bun run fixtures` (`dump_presets` example). Used in browser preview mode and for the
+ * "MODIFIED" badge; under Tauri the list comes from the `list_presets` command. Never edit the
+ * JSON by hand: change the Rust presets and regenerate.
+ */
+export const BUILTIN_PRESETS: readonly BuiltinPreset[] = builtinPresets as BuiltinPreset[];
 
-export type BuiltinPresetId = (typeof BUILTIN_PRESET_IDS)[number];
-
-/** Display metadata mirrored from `crates/fxcursor-protocol/src/presets.rs` for browser preview mode. */
-export const BUILTIN_PRESET_META: Record<BuiltinPresetId, { name: string; description: string }> = {
-  master_4layer: {
-    name: 'Master 4-Layer Glow',
-    description:
-      'Authentic D3D11 master design (Outer Glow + Mid Shadow + Crisp Core + Inner Spine)',
-  },
-  neon_cyberpunk: {
-    name: 'Neon Cyberpunk',
-    description:
-      'Electric cyan outer glow with deep violet contrast, hot plasma core, and high-velocity sparks',
-  },
-  razor_spine: {
-    name: 'Razor Minimalist Spine',
-    description:
-      'Ultra-thin, zero-blur high-precision centerline needle for esports and minimalists',
-  },
-  celestial_orbit: {
-    name: 'Celestial Orbit',
-    description:
-      'Glowing solar core with 4 revolving celestial satellites and gentle lunar ripples',
-  },
-  particle_firestorm: {
-    name: 'Particle Firestorm',
-    description: 'Blazing ember trail with dynamic gravity sparks and explosive shockwave bursts',
-  },
-  rainbow_aurora: {
-    name: 'Rainbow Aurora',
-    description: 'Continuous HSL spectrum cycling across the 4-layer master ribbon',
-  },
-};
-
-export const BUILTIN_PRESETS = BUILTIN_PRESET_IDS.map((id) => ({
-  id,
-  name: BUILTIN_PRESET_META[id].name,
-  description: BUILTIN_PRESET_META[id].description,
-  config: getPresetById(id)!,
-}));
+/** A deep copy of a built-in preset's config, or `null` for an unknown id. */
+export function getPresetById(id: string): AppConfig | null {
+  const preset = BUILTIN_PRESETS.find((p) => p.id === id);
+  return preset ? structuredClone(preset.config) : null;
+}

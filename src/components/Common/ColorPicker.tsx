@@ -7,17 +7,14 @@ interface ColorPickerProps {
   onChange: (color: [number, number, number, number]) => void;
 }
 
+/** `#rrggbb` for an RGBA in 0–1. Channels are clamped: an imported value outside 0–1 used to
+ * produce an invalid hex that the colour input silently ignored. */
 function rgbaToHex(rgba: [number, number, number, number]): string {
-  const r = Math.round(rgba[0] * 255)
-    .toString(16)
-    .padStart(2, '0');
-  const g = Math.round(rgba[1] * 255)
-    .toString(16)
-    .padStart(2, '0');
-  const b = Math.round(rgba[2] * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `#${r}${g}${b}`;
+  const channel = (v: number) =>
+    Math.round(Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0)) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(rgba[0])}${channel(rgba[1])}${channel(rgba[2])}`;
 }
 
 function hexToRgba(hex: string, alpha: number): [number, number, number, number] {
@@ -51,6 +48,7 @@ export const ColorPicker: Component<ColorPickerProps> = (props) => {
       <div style="display: flex; align-items: center; gap: 10px;">
         <input
           type="color"
+          aria-label={`${props.label} colour`}
           value={hex()}
           onChange={handleHexChange}
           style="width: 32px; height: 32px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: transparent; cursor: pointer; padding: 2px;"
@@ -58,6 +56,7 @@ export const ColorPicker: Component<ColorPickerProps> = (props) => {
         <div style="display: flex; align-items: center; gap: 6px;">
           <input
             type="range"
+            aria-label={`${props.label} opacity`}
             min="0"
             max="100"
             value={alphaPct()}

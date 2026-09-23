@@ -38,6 +38,9 @@ pub fn install() {
     let default_hook = std::panic::take_hook();
 
     std::panic::set_hook(Box::new(move |info| {
+        // A panic must never leave the system arrow replaced (`SetSystemCursor` sticks
+        // even after the process dies). No-op when the cursor was never hidden.
+        crate::cursor::force_restore();
         let msg = describe(info);
         eprintln!("{msg}");
         let path = panic_log_path();

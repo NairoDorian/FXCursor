@@ -4,7 +4,8 @@ use specta::Type;
 /// Global rendering preset/mode selector controlling which visual subsystems are active.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, Type)]
 pub enum EffectMode {
-    /// Full master 4-layer luminous ribbon glow with all auxiliary effects active.
+    /// Everything may draw: 4-layer ribbon, head, ripples, particles and satellites (each still
+    /// gated by its own `enabled` flag).
     #[default]
     FourLayerGlow,
     /// Ribbon trail and cursor head only; disables click ripples, particles, and satellites.
@@ -55,43 +56,60 @@ impl Default for LayerConfig {
 pub struct TrailConfig {
     /// Master toggle for ribbon trail physics and rendering.
     pub enabled: bool,
-    /// Number of simulated discrete nodes in the spring chain.
+    /// Number of simulated discrete nodes in the spring chain (4–150). Width, fade and blur
+    /// are parameterised by node index, so this is also the length of the visible taper.
     pub length: u32,
-    /// Spring stiffness constant for trailing body nodes.
+    /// Spring constant for the trailing body nodes, Windhawk scale: `k = spring / 1000` per
+    /// 1/120 s reference frame (1–500).
     pub spring: f32,
-    /// Damping ratio constant for trailing body nodes.
+    /// Velocity friction percent for the body nodes (0–99): each reference frame keeps
+    /// `1 − damping/100` of the velocity.
     pub damping: f32,
-    /// Spring stiffness constant for the leading head node.
+    /// Spring stiffness constant for the leading head node (same scale as `spring`: /1000).
     pub head_spring: f32,
-    /// Damping ratio constant for the leading head node.
+    /// Velocity friction percent for the leading head node (0–99; higher = more damping).
     pub head_damping: f32,
-    /// Number of leading nodes (including the head) that follow without overshoot; the rest of
-    /// the chain is spring-driven and may whip. Keeps the ribbon clean right at the pointer.
-    #[serde(default = "default_lead_nodes")]
-    pub lead_nodes: u32,
-    /// Base cursor width in physical pixels at the head of the trail.
+    /// LazyBrush: engage the TD-style dead-zone pointer smoother.
+    #[serde(default)]
+    pub lazy_enabled: bool,
+    /// Dead-zone radius in px the pointer must exceed before the brush starts moving.
+    #[serde(default = "default_lazy_radius")]
+    pub lazy_radius: f32,
+    /// Brush friction 0–0.99: fraction of the excess distance NOT applied per frame
+    /// (0 = snap to pointer, →1 = frozen). TD formula: factor = 1 - sqrt(1-(1-f)^2).
+    #[serde(default = "default_lazy_friction")]
+    pub lazy_friction: f32,
+    /// Reference ribbon width in physical pixels at the head; each layer scales it by its
+    /// `width_factor`.
     pub cursor_size: f32,
     /// Minimum clamping width in physical pixels at the tail of the trail.
     pub min_width: f32,
-    /// Velocity-driven width expansion multiplier.
+    /// Extra width at full speed: `width × (1 + mult × min(speed / 20, 1))`, speed in px per
+    /// 1/120 s (saturates at 2400 px/s, as in Windhawk).
     pub velocity_width_mult: f32,
-    /// Velocity-driven opacity boost multiplier.
+    /// Extra opacity at full speed, same normalisation as `velocity_width_mult`.
     pub velocity_alpha_mult: f32,
-    /// Subdivision steps for Catmull-Rom spline interpolation between simulated nodes.
+    /// Fixed Catmull-Rom sub-samples per node segment. Only used when `adaptive_quality` is
+    /// off; the adaptive path picks its own count from the local curvature.
     pub interpolation_steps: u32,
-    /// Falloff curve along the length of the trail (0=Linear, 1=EaseOut, 2=Exponential, 3=Sigmoid).
+    /// Falloff curve along the length of the trail
+    /// (0=Linear, 1=EaseOut, 2=Exponential, 3=Sigmoid, 4=Smoothstep).
     pub fade_mode: u32,
     /// Whether gradient interpolation between start and end color is applied.
     pub enable_gradient: bool,
-    /// Dynamically adapts spline sampling density based on local path curvature.
+    /// Curvature-adaptive spline sampling (3–24 px spacing): dense in bends, sparse on straight
+    /// runs. Overrides `interpolation_steps`.
     pub adaptive_quality: bool,
     /// 4-Layer Master Design: [0]=Outer Glow, [1]=Mid Shadow, [2]=Crisp Core, [3]=Inner Spine.
     pub layers: [LayerConfig; 4],
 }
 
-/// Default number of overshoot-free leading nodes (head + 3 followers).
-fn default_lead_nodes() -> u32 {
-    4
+fn default_lazy_radius() -> f32 {
+    30.0
+}
+
+fn default_lazy_friction() -> f32 {
+    0.4
 }
 
 impl Default for TrailConfig {
@@ -103,7 +121,9 @@ impl Default for TrailConfig {
             damping: 30.0,
             head_spring: 50.0,
             head_damping: 30.0,
-            lead_nodes: 4,
+            lazy_enabled: false,
+            lazy_radius: 30.0,
+            lazy_friction: 0.4,
             cursor_size: 40.0,
             min_width: 2.0,
             velocity_width_mult: 0.5,
@@ -163,11 +183,13 @@ impl Default for TrailConfig {
 pub struct HeadConfig {
     /// Whether the head shape is rendered at the cursor pointer.
     pub enabled: bool,
-    /// Base radius in physical pixels when the cursor is stationary.
+    /// Resting diameter in physical pixels.
     pub size: f32,
-    /// Elongation intensity along the velocity vector during mouse movement.
+    /// Elongation along the direction of motion, in percent per unit of eased speed (Windhawk
+    /// `squishIntensity`: `scale = min(v × 8, 200) / 15 × intensity / 100`).
     pub squish_intensity: f32,
-    /// Smoothing constant for head squish and orientation transitions.
+    /// Percent of the remaining gap the head (position, squish and angle) closes per 1/120 s
+    /// (1–100; 100 = locked to the pointer).
     pub squish_smoothing: f32,
     /// RGBA color of the cursor head (straight alpha, 0.0–1.0).
     pub color: [f32; 4],
@@ -180,7 +202,9 @@ pub struct HeadConfig {
 impl Default for HeadConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Trail-only default (mirrors V3): the ribbon is the product; the squishy
+            // head blob is opt-in from the Studio.
+            enabled: false,
             size: 18.0,
             squish_intensity: 3.0,
             squish_smoothing: 50.0,
@@ -213,7 +237,8 @@ pub struct RippleConfig {
 impl Default for RippleConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Trail-only default: click shockwaves are opt-in.
+            enabled: false,
             max_diameter: 100.0,
             duration_ms: 600,
             start_width: 8.0,
@@ -237,9 +262,9 @@ pub struct ParticleConfig {
     pub base_speed: f32,
     /// Downward gravity acceleration in pixels per second squared.
     pub gravity: f32,
-    /// Drag / velocity dampening factor applied per step (0.0–1.0).
+    /// Velocity kept per 1/60 s (0.0–1.0; frame-rate independent via `friction^(dt×60)`).
     pub friction: f32,
-    /// Particle radius in physical pixels.
+    /// Particle diameter in physical pixels.
     pub size: f32,
     /// RGBA tint color for particles.
     pub color: [f32; 4],
@@ -248,7 +273,8 @@ pub struct ParticleConfig {
 impl Default for ParticleConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Trail-only default: click particle bursts are opt-in.
+            enabled: false,
             count_per_click: 16,
             duration_ms: 500,
             base_speed: 300.0,
@@ -269,7 +295,7 @@ pub struct SatelliteConfig {
     pub count: u32,
     /// Diameter of the circular orbit in physical pixels.
     pub orbit_diameter: f32,
-    /// Radius of each satellite body in physical pixels.
+    /// Diameter of each satellite body in physical pixels.
     pub size: f32,
     /// Orbit revolution speed in radians per second.
     pub speed: f32,
@@ -304,7 +330,7 @@ impl Default for SatelliteConfig {
 pub struct RainbowConfig {
     /// Whether rainbow color cycling replaces static layer colors.
     pub enabled: bool,
-    /// Cycle speed in full hue rotations per second.
+    /// Hue advance in degrees per 1/60 s (frame-rate independent; 2 ≈ one cycle every 3 s).
     pub speed: f32,
     /// HSL saturation level (0.0 = grey, 1.0 = full vibrancy).
     pub saturation: f32,
@@ -328,7 +354,8 @@ impl Default for RainbowConfig {
 pub struct FpsCounterConfig {
     /// Whether the FPS counter HUD is drawn on the overlay.
     pub enabled: bool,
-    /// Update interval for HUD text in milliseconds (minimum 100ms).
+    /// Update interval for the HUD text in milliseconds. Frame statistics are gathered in
+    /// 500 ms windows, so values below 500 behave like 500.
     pub refresh_rate_ms: u32,
     /// If true, aligns HUD to the right side of the screen; left otherwise.
     pub align_right: bool,
@@ -343,6 +370,39 @@ impl Default for FpsCounterConfig {
             refresh_rate_ms: 500,
             align_right: true,
             align_bottom: false,
+        }
+    }
+}
+
+/// GPU-rendered system-cursor bypass: the active OS cursor shape is extracted, drawn on the
+/// overlay with optional movement rotation and a click bounce, and the real cursor can be hidden.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct GpuCursorConfig {
+    /// Master toggle for the GPU-drawn cursor shape.
+    pub enabled: bool,
+    /// Replace the system arrow with an invisible cursor while the bypass is active.
+    /// Restored automatically on disable, exit and panic.
+    pub hide_system_cursor: bool,
+    /// Rotate the arrow to point along the direction of pointer movement (smoothed).
+    pub rotate_with_movement: bool,
+    /// Rotation easing time constant in 1/60 s frames (1–30): higher is smoother but lags
+    /// further behind direction changes.
+    pub rotation_smoothing: f32,
+    /// Peak click-bounce scale in percent (100 = no bounce, 150 = 1.5×).
+    pub click_scale_percent: f32,
+    /// Click-bounce animation duration in milliseconds.
+    pub click_scale_duration_ms: u32,
+}
+
+impl Default for GpuCursorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            hide_system_cursor: true,
+            rotate_with_movement: true,
+            rotation_smoothing: 5.0,
+            click_scale_percent: 150.0,
+            click_scale_duration_ms: 200,
         }
     }
 }
@@ -401,13 +461,18 @@ pub struct AppConfig {
     pub rainbow: RainbowConfig,
     /// On-overlay FPS HUD counter settings.
     pub fps_counter: FpsCounterConfig,
+    /// GPU-rendered system-cursor bypass settings (missing in older config files).
+    #[serde(default)]
+    pub gpu_cursor: GpuCursorConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            effect_mode: EffectMode::default(),
+            // Trail-only out of the box: the mode mask plus the per-effect `enabled`
+            // flags below keep ripples / particles / satellites / head off until chosen.
+            effect_mode: EffectMode::Ribbon,
             general: GeneralConfig::default(),
             trail: TrailConfig::default(),
             head: HeadConfig::default(),
@@ -416,6 +481,7 @@ impl Default for AppConfig {
             satellites: SatelliteConfig::default(),
             rainbow: RainbowConfig::default(),
             fps_counter: FpsCounterConfig::default(),
+            gpu_cursor: GpuCursorConfig::default(),
         }
     }
 }
