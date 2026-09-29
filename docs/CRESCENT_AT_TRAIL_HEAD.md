@@ -4,9 +4,13 @@
 > Every attempt made so far made the trail worse and was reverted. The ribbon is byte-identical
 > to the last known-good build; nothing in this document has been applied.
 >
-> **Reproduce the numbers:** `cargo run -p fxcursor-render --example dump_crescent`
-> (headless, CPU only — see [`DO_NOT_LAUNCH_THE_APP.md`](DO_NOT_LAUNCH_THE_APP.md), the app
-> must never be launched to test this).
+> **How to work on this:** read [`RUNNING_AND_DEBUGGING.md`](RUNNING_AND_DEBUGGING.md) first.
+> `bun run tauri dev` **is allowed** and is the only trustworthy place to judge a visual change.
+> **Do not judge a fix from CPU rendering** — a CPU rasteriser was used for exactly that during a
+> previous attempt and it showed a clean picture for a fix that was still broken, and worse, in
+> the real app. The numbers below are valid (they come from `layer_sample_style`, the same code
+> the GPU uses); the *pictures* produced from them were not, and that mistake is what this note
+> now leads with.
 
 ---
 
@@ -115,6 +119,17 @@ All of these are reverted. `build_samples` is byte-identical to the last known-g
 only renderer diff is the parameter-unit change (`spring / 1000` → `spring`, etc.). **The user
 reported the trail became jittery everywhere and that this broke the whole ribbon.**
 
+> ⚠️ **The central mistake, and the reason the fix has to be redone.** These were judged on **CPU
+> rasterisations** that looked clean. Run in the real app under `bun run tauri dev` with wgpu,
+> the artifact was **still there and worse**. See
+> [`RUNNING_AND_DEBUGGING.md`](RUNNING_AND_DEBUGGING.md) §2 for exactly why a CPU picture is
+> not a proxy: the GPU feathers edges with `blur` (layer 0 ships 0.39–0.50 of the radius), resolves
+> the union by **feathered alpha** in a depth pre-pass, and composites pre-multiplied. None of
+> that was modelled, so "it looked right" meant nothing.
+>
+> The **numbers** in §3 are still sound — they are read from `layer_sample_style`, the same code
+> that fills the GPU instance buffer. It was only the *visual* judgement that was invalid.
+
 ### Attempt 1 — collapse the head cluster at rest
 *Fold the nodes within 8 px of the head onto it, once the head has arrived, zeroing their
 velocity.*
@@ -189,31 +204,52 @@ verifying each. Possible directions, in order of increasing risk:
 3. **Only then** reconsider fold removal, and if so make it hysteretic (a node must clear the
    threshold by some margin before being dropped) so it cannot flip frame to frame.
 
-### How to see the result without launching the app
-`TrailChain`, `build_samples` and `build_layer_capsules` are **pure CPU with no window and no GPU
-context** — that is deliberate. Assertions belong in `cargo test -p fxcursor-render`, e.g.:
-- no merged node sits in front of the head (`node.x > head.x` for the first ~8 kept points) after
-  a stop;
+### How to see the result
+
+**Capture from the real app.** Start it with `bun run tauri dev` (Vite up, transparent overlay),
+confirm it is running, then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\snapshots\snapshot_motion.ps1 `
+  -Motion stop -StartX 250 -StartY 300 -Speed 0.9 -Size "900x520" -Burst 12 -IntervalMs 90
+```
+
+Keep `-StartX`/`-StartY` **inside** the `-Size` crop, or the trail is off-frame and you get a
+blank PNG. Each capture also logs the live chain from `chain_summary()`, so you can read the
+head offsets and node count for the exact frame you are looking at.
+
+A burst matters: the artifact is transient, so a single frame proves nothing either way.
+
+### Regression tests (numbers, not pictures)
+
+`TrailChain` / `build_samples` / `build_layer_capsules` are pure CPU, so assertions belong in
+`cargo test -p fxcursor-render` and run in CI:
+
+- no merged node sits in front of the head after a stop;
 - the head radius is within some factor (say 1.15×) of the next capsule's radius;
 - the visible length does not grow by more than a small percentage across the whole retract.
 
-A previous session also wrote a throwaway CPU rasteriser that composited the real capsules per
-layer into a PPM/PNG. It was **removed** during the revert because it added a `png` dev-dependency;
-re-adding it is cheap and was genuinely the only way to *see* the shape. It is not in the tree now.
+`cargo run -p fxcursor-render --example dump_crescent` prints the current numbers (the table in
+§3) and is fine for that. **It is a geometry dump, not a renderer** — it cannot tell you what
+the artifact looks like, and must never be used to claim a visual fix works.
 
 ---
 
 ## 7. Ground rules for working on this
 
-1. **Never launch the app.** A debug build has no front end bundled (it loads from
-   `devUrl: http://localhost:1420`), so running `fxcursor.exe` directly renders a webview error
-   page and an **opaque** overlay; that has twice left a stuck non-transparent window over the
-   whole desktop that needed a Windows reboot. `bun run tauri dev` is the user's job. Full rule:
-   [`DO_NOT_LAUNCH_THE_APP.md`](DO_NOT_LAUNCH_THE_APP.md). Note that `scripts/snapshots/*.ps1`
-   also spawn `fxcursor.exe` and count as launching it.
-2. **Verify headlessly:** `bun run validate` (7 gates) and `cargo test --workspace`.
-3. **Keep `src/lib/trail.ts` in sync** with `renderer.rs`, then `bun run fixtures`, and let
+1. **Run the app with `bun run tauri dev`.** That is allowed and is the correct way. **Never run a
+   bare `fxcursor.exe`**: a debug build has no front end bundled (it loads from
+   `devUrl http://localhost:1420`), so the webview renders an error page and the overlay is drawn
+   **opaque** — that has twice left a stuck non-transparent window over the whole desktop needing
+   a Windows reboot. `scripts/snapshots/*.ps1` are allowed too, but only once an app is already
+   running, because their `--capture` process becomes a *primary* instance (and hits the same
+   no-front-end problem) if none is. Full rule: [`RUNNING_AND_DEBUGGING.md`](RUNNING_AND_DEBUGGING.md).
+2. **Judge every visual change on a capture from the real wgpu app.** A CPU approximation of the
+   renderer is not evidence — that mistake invalidated a whole round of fixes here.
+3. **One change at a time**, verified in the real app between changes. Three landed as a bundle
+   once and the responsible change was never identified.
+4. **Keep `src/lib/trail.ts` in sync** with `renderer.rs`, then `bun run fixtures`, and let
    `test/trail-parity.test.ts` confirm. A physics change on one side only will fail there.
-4. **One change at a time**, with the user verifying in the real app between changes.
-5. If a change cannot be verified headlessly, say so and hand the check to the user rather than
-   opening a window.
+5. Headless gates are the first line of defence, not a substitute for looking at the app:
+   `bun run validate`, `cargo test --workspace`.
+6. If something cannot be checked, say so plainly rather than substituting an approximation.

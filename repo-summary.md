@@ -1,12 +1,16 @@
 # Repository Summary (root)
 
-> ⛔ **Never launch the app to test it.** `bun run tauri dev` is the user's job, and a bare
-> `target\debug\fxcursor.exe` is far worse: a debug build has **no front end bundled in** (it
-> loads from `devUrl` `http://localhost:1420`), so the webview renders an error page and the
-> overlay is drawn **opaque** — a stuck non-transparent window across the desktop that has twice
-> needed a **Windows reboot**. `scripts/snapshots/*.ps1` spawn `fxcursor.exe` too, so they count
-> as launching it. Verify headlessly with `bun run validate` / `rtk cargo test --workspace`.
-> Full rule: [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md).
+> **Run the app with `bun run tauri dev`** — that is correct and starts Vite, so the front end loads
+> and the overlay is genuinely transparent. **Never run a bare `target\debug\fxcursor.exe`**: a
+> debug build has **no front end bundled in** (it loads from `"devUrl": "http://localhost:1420"`),
+> so the webview renders an error page and the overlay is drawn **opaque** — a stuck
+> non-transparent window across the desktop that has twice needed a **Windows reboot**.
+> `scripts/snapshots/*.ps1` are fine once an app is already running; with none running their
+> `--capture` process becomes a primary instance and hits the same problem.
+>
+> **Judge visual changes on a capture from the real wgpu app, never on CPU rendering** — a CPU
+> approximation once approved a fix that was still broken in the real app. Full policy:
+> [`docs/RUNNING_AND_DEBUGGING.md`](docs/RUNNING_AND_DEBUGGING.md).
 
 > The per-file inventory with sizes, line counts and descriptions is generated into **[`ARCHITECTURE.md`](ARCHITECTURE.md)** by `bun run arch`. This file only maps the top-level layout so the root stays accurate. Updated 2026-09-09.
 

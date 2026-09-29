@@ -1,5 +1,23 @@
-// Regenerates the measurements quoted in docs/CRESCENT_AT_TRAIL_HEAD.md.
-// Headless, CPU only, opens no window:  cargo run -p fxcursor-render --example dump_crescent
+//! Geometry dump for the open "crescent at the head" bug (docs/CRESCENT_AT_TRAIL_HEAD.md).
+//!
+//! Prints the numbers behind the diagnosis: how far the merged centreline folds in front of
+//! the head, how much `progress` jumps between the first two drawn samples, and the resulting
+//! per-capsule radii.
+//!
+//! ## This is NOT a renderer — never use it to judge a visual fix
+//!
+//! It draws nothing. It reads `build_samples` / `build_layer_capsules`, which are the same code
+//! that fills the GPU instance buffer, so the *numbers* are trustworthy. But it cannot tell you
+//! what the artifact looks like, because the real pipeline does things a geometry dump does not
+//! model: `blur` feathers each capsule's edge across 39-50% of its radius, the depth pre-pass
+//! resolves the union by that feathered alpha, and compositing is pre-multiplied.
+//!
+//! A previous fix was judged on a CPU rasterisation of exactly these numbers, looked clean, and
+//! was still broken — and worse — in the real app. **Judge visual changes on a capture from
+//! `bun run tauri dev`**; see docs/RUNNING_AND_DEBUGGING.md.
+//!
+//! Usage: `cargo run -p fxcursor-render --example dump_crescent`
+
 use fxcursor_protocol::AppConfig;
 use fxcursor_render::{build_layer_capsules, build_samples, Sample, TrailChain, UNBOUNDED_VIEWPORT};
 

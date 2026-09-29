@@ -68,7 +68,7 @@ crates/
 docs/
   COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md
   CRESCENT_AT_TRAIL_HEAD.md
-  DO_NOT_LAUNCH_THE_APP.md
+  RUNNING_AND_DEBUGGING.md
   V4_ARCHITECTURE_SPECIFICATION.md
 legacy/
   dev_scripts/
@@ -327,7 +327,7 @@ vite.config.ts
 
 ## 2. File Inventory & Descriptions
 
-Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary assets are listed without content metrics).
+Repomix metrics: **238 files · 2.1 MB · 592,857 tokens** (text files; binary assets are listed without content metrics).
 
 | File Path | Size | Lines | Tokens | Chars | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -338,9 +338,9 @@ Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary a
 | `.oxlintrc.json` | 748 B | 24 | 222 | 747 | oxlint (TS7-compatible linter) configuration for high-performance static analysis. |
 | `.prettierignore` | 142 B | 12 | 44 | 141 | Prettier ignore configuration excluding dist, target, node_modules, and logs. |
 | `.prettierrc` | 106 B | 7 | 41 | 105 | Prettier formatting configuration enforcing single quotes and 2-space indentation. |
-| `AGENTS.md` | 12.4 KB | 195 | 3252 | 12683 | Source or configuration file for the application. |
+| `AGENTS.md` | 9.9 KB | 151 | 2479 | 10063 | Source or configuration file for the application. |
 | `Cargo.toml` | 1.2 KB | 42 | 388 | 1202 | Source or configuration file for the application. |
-| `CHANGELOG.md` | 31.6 KB | 305 | 7985 | 32266 | Source or configuration file for the application. |
+| `CHANGELOG.md` | 31.6 KB | 303 | 7973 | 32222 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/Cargo.toml` | 1.7 KB | 69 | 554 | 1771 | Cargo manifest for standalone background daemon service. |
 | `crates/fxcursor-daemon/src/gpu/mod.rs` | 3.8 KB | 114 | 803 | 3880 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/src/input/mod.rs` | 983 B | 42 | 242 | 982 | Source or configuration file for the application. |
@@ -364,7 +364,7 @@ Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary a
 | `crates/fxcursor-protocol/src/self_healing.rs` | 7.5 KB | 248 | 1671 | 7699 | Field-level self-healing JSON deserializer (serde_path_to_error) with repair log. |
 | `crates/fxcursor-protocol/tests/fixture_parity.rs` | 1.5 KB | 34 | 388 | 1585 | Rust side of the default-config parity check against test/fixtures. |
 | `crates/fxcursor-render/Cargo.toml` | 632 B | 19 | 166 | 631 | Cargo manifest for the shared wgpu renderer crate used by the Studio and the daemon. |
-| `crates/fxcursor-render/examples/dump_crescent.rs` | 2.8 KB | 66 | 843 | 2866 | Source or configuration file for the application. |
+| `crates/fxcursor-render/examples/dump_crescent.rs` | 3.8 KB | 84 | 1089 | 3876 | Source or configuration file for the application. |
 | `crates/fxcursor-render/examples/dump_mode_masks.rs` | 1.3 KB | 40 | 345 | 1289 | Prints ModeMask::from_mode for every EffectMode as JSON; used by `bun run fixtures`. |
 | `crates/fxcursor-render/examples/dump_trail_trace.rs` | 3.0 KB | 75 | 852 | 3075 | Source or configuration file for the application. |
 | `crates/fxcursor-render/src/cursor.rs` | 11.0 KB | 281 | 3330 | 11303 | Source or configuration file for the application. |
@@ -376,8 +376,8 @@ Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary a
 | `crates/fxcursor-render/tests/mode_mask_fixture.rs` | 1.9 KB | 56 | 491 | 1908 | Rust side of the effect-mode parity check against test/fixtures/mode_masks.json. |
 | `crates/fxcursor-render/tests/preset_modes.rs` | 1.2 KB | 25 | 301 | 1244 | Source or configuration file for the application. |
 | `docs/COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md` | 18.7 KB | 257 | 4646 | 18344 | Source or configuration file for the application. |
-| `docs/CRESCENT_AT_TRAIL_HEAD.md` | 11.8 KB | 219 | 3250 | 11980 | Source or configuration file for the application. |
-| `docs/DO_NOT_LAUNCH_THE_APP.md` | 5.6 KB | 114 | 1466 | 5736 | Source or configuration file for the application. |
+| `docs/CRESCENT_AT_TRAIL_HEAD.md` | 13.9 KB | 255 | 3790 | 14121 | Source or configuration file for the application. |
+| `docs/RUNNING_AND_DEBUGGING.md` | 6.8 KB | 136 | 1794 | 6915 | Source or configuration file for the application. |
 | `docs/V4_ARCHITECTURE_SPECIFICATION.md` | 25.7 KB | 318 | 5573 | 23603 | Source or configuration file for the application. |
 | `DOCUMENTATION.md` | 1.6 KB | 32 | 390 | 1661 | Master upstream documentation map for Tauri 2, SolidJS 2, Bun, TypeScript 7, and wgpu. |
 | `HANDOVER_TRAIL_REWRITE.md` | 29.8 KB | 588 | 8902 | 30250 | Source or configuration file for the application. |
@@ -477,22 +477,22 @@ Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary a
 | `legacy/TD_Web_Trail/TD-Socket-Server-V4/package.json` | 134 B | 8 | 48 | 134 | Source or configuration file for the application. |
 | `legacy/TD_Web_Trail/TD-Socket-Server-V4/README.md` | 3.0 KB | 90 | 737 | 3079 | Source or configuration file for the application. |
 | `legacy/TD_Web_Trail/trail-system.js` | 41.5 KB | 1311 | 11206 | 42419 | Source or configuration file for the application. |
-| `memory.md` | 9.5 KB | 117 | 2206 | 9734 | Source or configuration file for the application. |
+| `memory.md` | 9.9 KB | 121 | 2266 | 10123 | Source or configuration file for the application. |
 | `package.json` | 1.8 KB | 45 | 616 | 1838 | Project manifest containing Bun scripts, SolidJS 2.0, and Tauri 2 dependencies. |
-| `PROGRESS.md` | 49.5 KB | 335 | 11292 | 50522 | Source or configuration file for the application. |
+| `PROGRESS.md` | 49.8 KB | 339 | 11338 | 50786 | Source or configuration file for the application. |
 | `public/overlay.html` | 265 B | 17 | 73 | 264 | Source or configuration file for the application. |
-| `README.md` | 14.3 KB | 192 | 3593 | 14400 | Source or configuration file for the application. |
-| `repo-summary.md` | 2.7 KB | 22 | 552 | 2789 | Source or configuration file for the application. |
-| `repomix-instruction.md` | 4.5 KB | 45 | 1225 | 4592 | Source or configuration file for the application. |
+| `README.md` | 14.4 KB | 195 | 3607 | 14479 | Source or configuration file for the application. |
+| `repo-summary.md` | 3.0 KB | 26 | 593 | 3061 | Source or configuration file for the application. |
+| `repomix-instruction.md` | 4.8 KB | 49 | 1267 | 4885 | Source or configuration file for the application. |
 | `repomix.config.json` | 752 B | 34 | 209 | 751 | Repomix configuration for metadata-only architecture output. |
 | `scripts/before-commit.ts` | 7.3 KB | 215 | 2050 | 7432 | 7-gate validation suite and multi-manifest version synchronizer. |
 | `scripts/create-icons.ts` | 680 B | 26 | 195 | 671 | Cross-platform application icon validator and generator. |
 | `scripts/generate-arch.ts` | 15.5 KB | 274 | 3928 | 15883 | Repomix pack() API-driven generator producing ARCHITECTURE.md. |
 | `scripts/package-portable.ts` | 3.7 KB | 94 | 1004 | 3766 | Builds the portable zip (exe + `portable` marker + Data/ + README) from the release build. |
-| `scripts/snapshots/contact_sheet.ps1` | 2.6 KB | 45 | 800 | 2672 | Source or configuration file for the application. |
-| `scripts/snapshots/snapshot_motion.ps1` | 4.0 KB | 87 | 1237 | 4133 | Source or configuration file for the application. |
-| `scripts/snapshots/snapshot_trail.ps1` | 4.7 KB | 115 | 1613 | 4825 | Source or configuration file for the application. |
-| `scripts/snapshots/zoom_sheet.ps1` | 2.7 KB | 45 | 847 | 2808 | Source or configuration file for the application. |
+| `scripts/snapshots/contact_sheet.ps1` | 2.6 KB | 43 | 800 | 2675 | Source or configuration file for the application. |
+| `scripts/snapshots/snapshot_motion.ps1` | 4.0 KB | 85 | 1237 | 4136 | Source or configuration file for the application. |
+| `scripts/snapshots/snapshot_trail.ps1` | 4.7 KB | 113 | 1613 | 4828 | Source or configuration file for the application. |
+| `scripts/snapshots/zoom_sheet.ps1` | 2.7 KB | 43 | 847 | 2811 | Source or configuration file for the application. |
 | `scripts/sync-docs.ts` | 3.5 KB | 119 | 958 | 3526 | Documentation mirror manager managing shallow git mirrors under .docs/. |
 | `scripts/update-deps.ts` | 21.0 KB | 561 | 5659 | 21411 | End-to-end automated dual-ecosystem pre-release upgrade pipeline. |
 | `scripts/version.ts` | 169 B | 5 | 40 | 168 | Single global source of truth for the application version (APP_VERSION). |

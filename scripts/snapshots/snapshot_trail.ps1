@@ -1,24 +1,22 @@
 <#
   ================================================================================
-  DO NOT RUN THIS SCRIPT FROM AN AUTOMATED AGENT.
+  HOW TO USE THIS SCRIPT
   ================================================================================
-  This script starts a NEW `fxcursor.exe --capture ...` process and relies on the
-  single-instance plugin to forward the request to an already-running instance.
+  The app must ALREADY be running, started with `bun run tauri dev` (which runs
+  Vite, so the front end loads and the overlay is transparent).
 
-  If FXCursor is NOT already running, that process becomes a PRIMARY instance: it
-  ignores the capture arguments and starts the app normally. And a debug build has
-  NO FRONT END BUNDLED IN -- it loads from "devUrl": "http://localhost:1420", which
-  only `bun run tauri dev` starts. So the webview renders an error page and the
-  overlay is drawn OPAQUE instead of transparent: a stuck non-transparent window
-  across the whole desktop. That has twice happened and the user had to REBOOT
-  WINDOWS to recover. A broken overlay is a broken desktop.
+  This script starts a NEW `fxcursor.exe --capture ...` process and relies on
+  the single-instance plugin to forward the request to that running instance.
+  If NO instance is running, the capture process becomes a PRIMARY instance: it
+  ignores the capture args and starts the app with no Vite server on port 1420.
+  A debug build has no front end bundled in, so the webview renders an error
+  page and the overlay is drawn OPAQUE instead of transparent -- a stuck
+  non-transparent window across the whole desktop. That has twice happened and
+  required REBOOTING WINDOWS. A broken overlay is a broken desktop.
 
-  Running this script IS launching the app. Only the user runs it, deliberately,
-  with the app already open.
-
-  Full rule: docs/DO_NOT_LAUNCH_THE_APP.md
-#>
-param(
+  Start the app first, confirm it is up, then run this. Never run it against a
+  stopped app. Full policy: docs/RUNNING_AND_DEBUGGING.md
+#>param(
   [string]$OutPath = (Join-Path $PSScriptRoot "..\..\target\snapshots\trail_snapshot.png"),
   [string]$Exe = (Join-Path $PSScriptRoot "..\..\target\debug\fxcursor.exe"),
   [int]$StartX = 900,

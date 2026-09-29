@@ -2,36 +2,34 @@
 
 ## [Unreleased]
 
-### Process — never launch the app to test it
+### Process — how to run the app, and how to judge a visual change
 
-- Added [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md) and mirrored the rule
+- Added [`docs/RUNNING_AND_DEBUGGING.md`](docs/RUNNING_AND_DEBUGGING.md) and mirrored the policy
   into `AGENTS.md`, `README.md`, `PROGRESS.md`, `memory.md`, `repo-summary.md` and
-  `repomix-instruction.md`. `bun run tauri dev` has been removed from the sanctioned-command
-  table in `AGENTS.md`.
-- **What went wrong — the actual root cause:** `src-tauri/tauri.conf.json` sets
-  `"beforeDevCommand": "bun run dev"` and `"devUrl": "http://localhost:1420"`. A **debug build
-  has no front end bundled into it** — it is compiled to load its UI from the Vite dev server,
-  and `bun run tauri dev` is what starts that server. Running `target\debug\fxcursor.exe` on its
-  own, with nothing serving port 1420, means the Studio webview loads nothing and renders a
-  **webview error page**, the overlay draws that opaque content instead of being transparent, and
-  the result is a **large opaque window across the whole desktop** that will not go away. That
-  happened **twice** and the user had to **reboot Windows** to recover; the overlay covers the
-  entire virtual desktop, so a broken overlay is a broken desktop. There is no "just the overlay"
-  or "headless-ish" invocation, and **no front end means the overlay is not transparent.**
-- A second mechanism compounded it: `scripts/snapshots/*.ps1` start a **new**
-  `fxcursor.exe --capture …` and rely on the single-instance plugin to forward the request. With
-  no instance running, that process becomes a *primary* instance — it ignores the capture args
-  and comes up with no front end, i.e. the same opaque overlay. So running a snapshot script is
-  itself launching the app; there is no "capture only" mode.
-- `-WindowStyle Hidden` / `-WindowStyle Minimized` was tried as a "gentler" start. It creates
-  the same real windows and still hits the missing-front-end problem, so the overlay is still
-  opaque; the window style only hides the evidence, which makes the damage harder to spot and to
-  recover from. Now explicitly forbidden rather than treated as a workaround.
-- **Verification is headless from here on:** `bun run validate` (7 gates) and
-  `rtk cargo test --workspace` cover config, presets, Rust ⇄ TypeScript parity and the trail
-  physics, because `TrailChain` / `build_samples` / `build_layer_capsules` are pure CPU. A change
-  that genuinely cannot be checked that way is now handed to the user to run and reported as
-  unverified, instead of an agent opening a window to look at it.
+  `repomix-instruction.md`, plus a usage banner on each `scripts/snapshots/*.ps1`.
+- **Running the app is allowed, with `bun run tauri dev`.** It runs Vite (`beforeDevCommand`) and
+  launches with the front end wired up, so the Studio UI loads and the overlay is transparent.
+  What is forbidden is a **bare `fxcursor.exe`**: `tauri.conf.json` sets `"devUrl":
+  "http://localhost:1420"`, so a **debug build has no front end bundled in**. Run on its own the
+  webview renders an **error page**, the overlay draws that **opaque** content instead of being
+  transparent, and the result is a **stuck opaque window across the whole desktop**. That happened
+  **twice** and needed a **Windows reboot**; the overlay covers the entire virtual desktop, so a
+  broken overlay is a broken desktop. `-WindowStyle Hidden`/`Minimized` is not a mitigation — same
+  windows, same opaque overlay, it just hides the evidence.
+- `scripts/snapshots/*.ps1` send a capture to a **running** instance via the single-instance
+  plugin, which is fine. With nothing running, their `--capture` process becomes a *primary*
+  instance and hits the same no-front-end problem, so always start the app first.
+- **Never judge a visual change from CPU rendering.** A previous attempt built a CPU rasteriser of
+  the capsule geometry and used it to approve a trail fix; it looked clean, and the bug was still
+  there — and worse — in the real wgpu app. The GPU feathers every capsule edge by `blur` (layer
+  0 ships 0.39–0.50 of the radius), resolves the union by that feathered alpha in a depth
+  pre-pass, and composites pre-multiplied, none of which a CPU approximation models. **Capture from
+  the running app instead** — `src-tauri/src/capture.rs` calls the real `renderer.render()` and
+  reads the frame back with `copy_texture_to_buffer`, and logs `chain_summary()` per capture so
+  the picture can be read against the physics of the same frame.
+- Headless tests remain the first line of defence for **numerical** behaviour (`bun run validate`,
+  `cargo test --workspace`): `TrailChain` / `build_samples` / `build_layer_capsules` are pure CPU,
+  so regression assertions belong there. They are not a substitute for looking at the app.
 
 ### Reverted — trail geometry changes that made the trail jitter
 

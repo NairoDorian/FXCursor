@@ -1,12 +1,16 @@
 # FXCursor V4 — Project Progress, Status & Roadmap
 
-> ⛔ **Agents must never launch the app.** Never `bun run tauri dev`, and above all never a bare
-> `target\debug\fxcursor.exe`: a debug build has **no front end bundled in** (it loads from
-> `devUrl` `http://localhost:1420`), so the webview renders an error page and the overlay is
-> drawn **opaque** — a stuck non-transparent window across the desktop that has twice needed a
-> **Windows reboot**. `scripts/snapshots/*.ps1` spawn `fxcursor.exe` too, so they count as
-> launching it. Verify with `bun run validate` and `rtk cargo test --workspace` (headless).
-> See [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md).
+> **Run the app with `bun run tauri dev`** — that is correct and starts Vite, so the front end loads
+> and the overlay is genuinely transparent. **Never run a bare `target\debug\fxcursor.exe`**: a
+> debug build has **no front end bundled in** (it loads from `"devUrl": "http://localhost:1420"`),
+> so the webview renders an error page and the overlay is drawn **opaque** — a stuck
+> non-transparent window across the desktop that has twice needed a **Windows reboot**.
+> `scripts/snapshots/*.ps1` are fine once an app is already running; with none running their
+> `--capture` process becomes a primary instance and hits the same problem.
+>
+> **Judge visual changes on a capture from the real wgpu app, never on CPU rendering** — a CPU
+> approximation once approved a fix that was still broken in the real app. Full policy:
+> [`docs/RUNNING_AND_DEBUGGING.md`](docs/RUNNING_AND_DEBUGGING.md).
 
 > **Milestone Status**: 🟡 Under construction — Tauri single-process path works end to end on Windows; V4 "micro-daemon" architecture is a prototype with stabilized IPC. Repository restructured and renamed **FXCursor** (the whole app at the root).
 > **Version**: `0.5.0` (pre-release)

@@ -1,15 +1,18 @@
 # FXCursor
 
-> ⛔ **Never launch this app to test it.** The overlay is a full-desktop transparent window, and
-> launching it puts real windows on the user's screen. In particular **never run
-> `target\debug\fxcursor.exe` directly**: a debug build has no front end bundled in (it loads
-> from `http://localhost:1420`, see `devUrl` in `tauri.conf.json`), so the webview shows an error
-> page and the overlay is drawn **opaque** instead of transparent. That has twice left a stuck
-> non-transparent window across the desktop that needed a **Windows reboot**. `scripts/snapshots/*.ps1`
-> spawn `fxcursor.exe` too, so they count as launching the app. `bun run tauri dev` is for the
-> **user**, never for an automated agent. Verify with `bun run validate` and
-> `rtk cargo test --workspace` instead — both are fully headless.
-> Full details: [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md).
+> **Run the app with `bun run tauri dev`** — that is the correct way, and it starts Vite so the
+> front end loads and the overlay is genuinely transparent. **Never run a bare
+> `target\debug\fxcursor.exe`**: a debug build has no front end bundled (it loads from
+> `"devUrl": "http://localhost:1420"`), so the webview shows an error page and the overlay is
+> drawn **opaque** — that has twice left a stuck non-transparent window across the desktop
+> needing a **Windows reboot**.
+>
+> **Judge visual changes on a capture from the running app**, never on CPU rendering: a CPU
+> approximation once approved a trail fix that was still broken in the real wgpu app, because it
+> did not model `blur` feathering, the depth pre-pass or pre-multiplied compositing. Start
+> `bun run tauri dev`, then `powershell -ExecutionPolicy Bypass -File
+> scripts\snapshots\snapshot_motion.ps1 -Motion stop`.
+> Full policy: [`docs/RUNNING_AND_DEBUGGING.md`](docs/RUNNING_AND_DEBUGGING.md).
 
 [![Tauri 2](https://img.shields.io/badge/Tauri-v2.11-24C8D5?style=flat-square&logo=tauri&logoColor=white)](https://v2.tauri.app)
 [![Bun](https://img.shields.io/badge/Bun-v1.4-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
