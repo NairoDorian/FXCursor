@@ -106,3 +106,9 @@ Say so plainly and **hand the check to the user**:
 
 Do not offer to launch the app. Do not launch it "just to check". An unverifiable change is
 reported as unverified, not quietly assumed to work.
+
+> Working example: the open crescent-on-the-head bug
+> ([`CRESCENT_AT_TRAIL_HEAD.md`](CRESCENT_AT_TRAIL_HEAD.md)) is diagnosed entirely from headless
+> CPU measurements, because `TrailChain` / `build_samples` / `build_layer_capsules` need no window
+> and no GPU context. Reproduce them with
+> `cargo run -p fxcursor-render --example dump_crescent`.

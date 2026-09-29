@@ -50,6 +50,7 @@ crates/
     Cargo.toml
   fxcursor-render/
     examples/
+      dump_crescent.rs
       dump_mode_masks.rs
       dump_trail_trace.rs
     src/
@@ -66,6 +67,7 @@ crates/
     Cargo.toml
 docs/
   COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md
+  CRESCENT_AT_TRAIL_HEAD.md
   DO_NOT_LAUNCH_THE_APP.md
   V4_ARCHITECTURE_SPECIFICATION.md
 legacy/
@@ -325,20 +327,20 @@ vite.config.ts
 
 ## 2. File Inventory & Descriptions
 
-Repomix metrics: **236 files · 2.1 MB · 588,010 tokens** (text files; binary assets are listed without content metrics).
+Repomix metrics: **238 files · 2.1 MB · 592,325 tokens** (text files; binary assets are listed without content metrics).
 
 | File Path | Size | Lines | Tokens | Chars | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `.cargo/config.toml` | 74 B | 5 | 19 | 73 | Source or configuration file for the application. |
 | `.github/workflows/ci.yml` | 3.1 KB | 101 | 843 | 3199 | Source or configuration file for the application. |
-| `.gitignore` | 593 B | 42 | 171 | 592 | Git ignore configuration excluding build artifacts, node_modules, logs, and lockfiles. |
+| `.gitignore` | 770 B | 46 | 210 | 767 | Git ignore configuration excluding build artifacts, node_modules, logs, and lockfiles. |
 | `.gitmodules` | 117 B | 3 | 35 | 116 | Source or configuration file for the application. |
 | `.oxlintrc.json` | 748 B | 24 | 222 | 747 | oxlint (TS7-compatible linter) configuration for high-performance static analysis. |
 | `.prettierignore` | 142 B | 12 | 44 | 141 | Prettier ignore configuration excluding dist, target, node_modules, and logs. |
 | `.prettierrc` | 106 B | 7 | 41 | 105 | Prettier formatting configuration enforcing single quotes and 2-space indentation. |
 | `AGENTS.md` | 12.4 KB | 195 | 3252 | 12683 | Source or configuration file for the application. |
 | `Cargo.toml` | 1.2 KB | 42 | 388 | 1202 | Source or configuration file for the application. |
-| `CHANGELOG.md` | 31.1 KB | 301 | 7883 | 31661 | Source or configuration file for the application. |
+| `CHANGELOG.md` | 31.6 KB | 305 | 7985 | 32266 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/Cargo.toml` | 1.7 KB | 69 | 554 | 1771 | Cargo manifest for standalone background daemon service. |
 | `crates/fxcursor-daemon/src/gpu/mod.rs` | 3.8 KB | 114 | 803 | 3880 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/src/input/mod.rs` | 983 B | 42 | 242 | 982 | Source or configuration file for the application. |
@@ -362,6 +364,7 @@ Repomix metrics: **236 files · 2.1 MB · 588,010 tokens** (text files; binary a
 | `crates/fxcursor-protocol/src/self_healing.rs` | 7.5 KB | 248 | 1671 | 7699 | Field-level self-healing JSON deserializer (serde_path_to_error) with repair log. |
 | `crates/fxcursor-protocol/tests/fixture_parity.rs` | 1.5 KB | 34 | 388 | 1585 | Rust side of the default-config parity check against test/fixtures. |
 | `crates/fxcursor-render/Cargo.toml` | 632 B | 19 | 166 | 631 | Cargo manifest for the shared wgpu renderer crate used by the Studio and the daemon. |
+| `crates/fxcursor-render/examples/dump_crescent.rs` | 2.8 KB | 66 | 843 | 2866 | Source or configuration file for the application. |
 | `crates/fxcursor-render/examples/dump_mode_masks.rs` | 1.3 KB | 40 | 345 | 1289 | Prints ModeMask::from_mode for every EffectMode as JSON; used by `bun run fixtures`. |
 | `crates/fxcursor-render/examples/dump_trail_trace.rs` | 3.0 KB | 75 | 852 | 3075 | Source or configuration file for the application. |
 | `crates/fxcursor-render/src/cursor.rs` | 11.0 KB | 281 | 3330 | 11303 | Source or configuration file for the application. |
@@ -373,7 +376,8 @@ Repomix metrics: **236 files · 2.1 MB · 588,010 tokens** (text files; binary a
 | `crates/fxcursor-render/tests/mode_mask_fixture.rs` | 1.9 KB | 56 | 491 | 1908 | Rust side of the effect-mode parity check against test/fixtures/mode_masks.json. |
 | `crates/fxcursor-render/tests/preset_modes.rs` | 1.2 KB | 25 | 301 | 1244 | Source or configuration file for the application. |
 | `docs/COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md` | 18.7 KB | 257 | 4646 | 18344 | Source or configuration file for the application. |
-| `docs/DO_NOT_LAUNCH_THE_APP.md` | 5.3 KB | 108 | 1372 | 5386 | Source or configuration file for the application. |
+| `docs/CRESCENT_AT_TRAIL_HEAD.md` | 11.8 KB | 219 | 3250 | 11980 | Source or configuration file for the application. |
+| `docs/DO_NOT_LAUNCH_THE_APP.md` | 5.6 KB | 114 | 1466 | 5736 | Source or configuration file for the application. |
 | `docs/V4_ARCHITECTURE_SPECIFICATION.md` | 25.7 KB | 318 | 5573 | 23603 | Source or configuration file for the application. |
 | `DOCUMENTATION.md` | 1.6 KB | 32 | 390 | 1661 | Master upstream documentation map for Tauri 2, SolidJS 2, Bun, TypeScript 7, and wgpu. |
 | `HANDOVER_TRAIL_REWRITE.md` | 29.8 KB | 588 | 8902 | 30250 | Source or configuration file for the application. |
@@ -475,7 +479,7 @@ Repomix metrics: **236 files · 2.1 MB · 588,010 tokens** (text files; binary a
 | `legacy/TD_Web_Trail/trail-system.js` | 41.5 KB | 1311 | 11206 | 42419 | Source or configuration file for the application. |
 | `memory.md` | 9.5 KB | 117 | 2206 | 9734 | Source or configuration file for the application. |
 | `package.json` | 1.8 KB | 45 | 616 | 1838 | Project manifest containing Bun scripts, SolidJS 2.0, and Tauri 2 dependencies. |
-| `PROGRESS.md` | 49.6 KB | 335 | 11305 | 50610 | Source or configuration file for the application. |
+| `PROGRESS.md` | 49.5 KB | 335 | 11292 | 50522 | Source or configuration file for the application. |
 | `public/overlay.html` | 265 B | 17 | 73 | 264 | Source or configuration file for the application. |
 | `README.md` | 14.3 KB | 192 | 3593 | 14400 | Source or configuration file for the application. |
 | `repo-summary.md` | 2.7 KB | 22 | 552 | 2789 | Source or configuration file for the application. |

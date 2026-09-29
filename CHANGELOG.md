@@ -39,7 +39,11 @@
   endpoint phantom, adding a fold-removal pass, and adding a second arc-length-based progress for
   width. Each of these made the trail jitter, so **all of it was reverted** and `build_samples`
   is byte-identical to the last known-good build again. The renderer diff is now only the
-  parameter-unit change described below. The crescent is still open — see `PROGRESS.md`.
+  parameter-unit change described below. **Still open** — the full diagnosis, the measurements,
+  every reverted attempt and the recommended next step are in
+  [`docs/CRESCENT_AT_TRAIL_HEAD.md`](docs/CRESCENT_AT_TRAIL_HEAD.md), with a headless
+  reproduction (`cargo run -p fxcursor-render --example dump_crescent`) so the next person does
+  not have to re-derive it or re-break the trail.
 
 ### Changed — parameters are now in natural units
 
