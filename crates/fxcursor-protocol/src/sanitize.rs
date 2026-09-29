@@ -2,13 +2,13 @@
 //!
 //! The self-healing deserializer only repairs *types*. Values still arrive from places the
 //! Studio sliders do not guard — a hand-edited `config.json`, `--apply` patches, imported or
-//! user presets, raw IPC — and some of them break the renderer: a spring constant far above
-//! Windhawk's 500 makes the explicit integrator explode, a non-finite float poisons the trail
-//! chain, an enormous `interpolation_steps` or `satellites.count` allocates without bound.
+//! user presets, raw IPC — and some of them break the renderer: a non-finite float poisons the
+//! trail chain, an enormous `length`, `interpolation_steps` or `satellites.count` allocates
+//! without bound, a `velocity_reference_speed` of 0 divides by zero.
 //!
 //! [`AppConfig::sanitize`] clamps every numeric field to a range the renderer handles safely.
-//! The bounds are deliberately wider than the UI sliders: they reject what is unsafe, not what
-//! is unusual.
+//! The bounds are the same ones the GUI exposes wherever that is safe, so a value that the UI
+//! can produce is never rewritten under the user's back.
 
 use crate::config::{AppConfig, LayerConfig};
 
@@ -114,16 +114,18 @@ impl AppConfig {
         let c = &mut changed;
 
         let t = &mut self.trail;
-        clamp_u32(&mut t.length, 4, 150, "trail.length", c);
-        // Windhawk clamps springs to 1–500 (÷1000) and friction to 0–99 %.
-        clamp_f32(&mut t.spring, 1.0, 500.0, 50.0, "trail.spring", c);
-        clamp_f32(&mut t.damping, 0.0, 99.0, 30.0, "trail.damping", c);
-        clamp_f32(&mut t.head_spring, 1.0, 500.0, 50.0, "trail.head_spring", c);
+        clamp_u32(&mut t.length, 4, 500, "trail.length", c);
+        // Springs are plain fractions (0 = no pull, 1 = snaps shut) and frictions are plain
+        // retention factors (1 = frictionless). Both are bounded only by what the integrator
+        // and the capsule budget can take — the GUI exposes the same full range.
+        clamp_f32(&mut t.spring, 0.0, 1.0, 0.05, "trail.spring", c);
+        clamp_f32(&mut t.damping, 0.0, 1.0, 0.7, "trail.damping", c);
+        clamp_f32(&mut t.head_spring, 0.0, 1.0, 0.05, "trail.head_spring", c);
         clamp_f32(
             &mut t.head_damping,
             0.0,
-            99.0,
-            30.0,
+            1.0,
+            0.7,
             "trail.head_damping",
             c,
         );
@@ -168,6 +170,14 @@ impl AppConfig {
             "trail.velocity_alpha_mult",
             c,
         );
+        clamp_f32(
+            &mut t.velocity_reference_speed,
+            0.001,
+            1000.0,
+            20.0,
+            "trail.velocity_reference_speed",
+            c,
+        );
         clamp_u32(
             &mut t.interpolation_steps,
             1,
@@ -185,16 +195,16 @@ impl AppConfig {
         clamp_f32(
             &mut h.squish_intensity,
             0.0,
-            100.0,
-            3.0,
+            1.0,
+            0.03,
             "head.squish_intensity",
             c,
         );
         clamp_f32(
             &mut h.squish_smoothing,
+            0.0,
             1.0,
-            100.0,
-            50.0,
+            0.5,
             "head.squish_smoothing",
             c,
         );
@@ -344,19 +354,35 @@ mod tests {
         let mut cfg = AppConfig::default();
         cfg.trail.spring = 5_000.0;
         cfg.trail.damping = f32::NAN;
+        cfg.trail.length = 1_000_000;
         cfg.trail.interpolation_steps = 1_000_000;
         cfg.trail.layers[0].start_color[3] = f32::INFINITY;
         cfg.satellites.count = u32::MAX;
         cfg.general.max_fps = 5;
-        let changed = cfg.sanitize();
-        assert_eq!(cfg.trail.spring, 500.0);
-        assert_eq!(cfg.trail.damping, 30.0);
+        cfg.sanitize();
+        assert_eq!(cfg.trail.spring, 1.0);
+        assert_eq!(cfg.trail.damping, 0.7);
+        assert_eq!(cfg.trail.length, 500);
         assert_eq!(cfg.trail.interpolation_steps, 32);
         assert_eq!(cfg.trail.layers[0].start_color[3], 1.0);
         assert_eq!(cfg.satellites.count, 64);
         assert_eq!(cfg.general.max_fps, 24);
-        assert!(changed.contains(&"trail.spring") && changed.contains(&"trail.damping"));
         assert!(cfg.sanitize().is_empty(), "sanitize is idempotent");
+    }
+
+    #[test]
+    fn the_full_natural_parameter_range_survives_untouched() {
+        // The GUI exposes 0..1 for every spring and friction; sanitize must not narrow it.
+        let mut cfg = AppConfig::default();
+        cfg.trail.spring = 1.0;
+        cfg.trail.damping = 1.0;
+        cfg.trail.head_spring = 1.0;
+        cfg.trail.head_damping = 1.0;
+        cfg.trail.length = 500;
+        assert!(
+            cfg.sanitize().is_empty(),
+            "the full range the sliders allow must be valid"
+        );
     }
 
     #[test]

@@ -27,6 +27,10 @@ repomix-output-compressed.md
 config.ron
 legacy/project_cursor/config.ron
 
+# Personal legacy trail experiments kept on this machine only (vendored node_modules and a
+# nested .git repo — reference material, not part of the app).
+legacy/Nairodorian/
+
 # Portable-mode data next to a dev binary
 data/
 

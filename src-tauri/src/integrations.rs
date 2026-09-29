@@ -87,7 +87,7 @@ pub fn sync_autostart(app: &AppHandle, wanted: bool) {
     if *synced == Some(wanted) {
         return;
     }
-    let launcher = app.autolaunch();
+    let launcher = app.autostart();
     let current = launcher.is_enabled().unwrap_or(false);
     if current == wanted {
         *synced = Some(wanted);

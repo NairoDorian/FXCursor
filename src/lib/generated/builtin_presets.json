@@ -4,6 +4,7 @@
     "name": "Master 4-Layer Glow",
     "description": "Authentic D3D11 master design (Outer Glow + Mid Shadow + Crisp Core + Inner Spine)",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "Ribbon",
       "general": {
@@ -17,10 +18,10 @@
       "trail": {
         "enabled": true,
         "length": 80,
-        "spring": 50.0,
-        "damping": 30.0,
-        "head_spring": 50.0,
-        "head_damping": 30.0,
+        "spring": 0.05,
+        "damping": 0.7,
+        "head_spring": 0.05,
+        "head_damping": 0.7,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -28,6 +29,7 @@
         "min_width": 2.0,
         "velocity_width_mult": 0.5,
         "velocity_alpha_mult": 0.1,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 2,
         "fade_mode": 3,
         "enable_gradient": true,
@@ -114,8 +116,8 @@
       "head": {
         "enabled": false,
         "size": 18.0,
-        "squish_intensity": 3.0,
-        "squish_smoothing": 50.0,
+        "squish_intensity": 0.03,
+        "squish_smoothing": 0.5,
         "color": [
           1.0,
           1.0,
@@ -207,6 +209,7 @@
     "name": "Neon Cyberpunk",
     "description": "Electric cyan outer glow with deep violet contrast, hot plasma core, and high-velocity sparks",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "FourLayerGlow",
       "general": {
@@ -220,10 +223,10 @@
       "trail": {
         "enabled": true,
         "length": 90,
-        "spring": 60.0,
-        "damping": 28.0,
-        "head_spring": 60.0,
-        "head_damping": 28.0,
+        "spring": 0.06,
+        "damping": 0.72,
+        "head_spring": 0.06,
+        "head_damping": 0.72,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -231,6 +234,7 @@
         "min_width": 2.0,
         "velocity_width_mult": 0.6,
         "velocity_alpha_mult": 0.15,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 3,
         "fade_mode": 3,
         "enable_gradient": true,
@@ -317,8 +321,8 @@
       "head": {
         "enabled": true,
         "size": 20.0,
-        "squish_intensity": 3.5,
-        "squish_smoothing": 60.0,
+        "squish_intensity": 0.035,
+        "squish_smoothing": 0.6,
         "color": [
           0.0,
           0.95,
@@ -410,6 +414,7 @@
     "name": "Razor Minimalist Spine",
     "description": "Ultra-thin, zero-blur high-precision centerline needle for esports and minimalists",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "FourLayerGlow",
       "general": {
@@ -423,10 +428,10 @@
       "trail": {
         "enabled": true,
         "length": 50,
-        "spring": 80.0,
-        "damping": 35.0,
-        "head_spring": 80.0,
-        "head_damping": 35.0,
+        "spring": 0.08,
+        "damping": 0.65,
+        "head_spring": 0.08,
+        "head_damping": 0.65,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -434,6 +439,7 @@
         "min_width": 1.5,
         "velocity_width_mult": 0.3,
         "velocity_alpha_mult": 0.05,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 2,
         "fade_mode": 1,
         "enable_gradient": false,
@@ -520,8 +526,8 @@
       "head": {
         "enabled": true,
         "size": 14.0,
-        "squish_intensity": 2.0,
-        "squish_smoothing": 80.0,
+        "squish_intensity": 0.02,
+        "squish_smoothing": 0.8,
         "color": [
           1.0,
           1.0,
@@ -613,6 +619,7 @@
     "name": "Celestial Orbit",
     "description": "Glowing solar core with 4 revolving celestial satellites and gentle lunar ripples",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "FourLayerGlow",
       "general": {
@@ -626,10 +633,10 @@
       "trail": {
         "enabled": true,
         "length": 70,
-        "spring": 45.0,
-        "damping": 32.0,
-        "head_spring": 45.0,
-        "head_damping": 32.0,
+        "spring": 0.045,
+        "damping": 0.68,
+        "head_spring": 0.045,
+        "head_damping": 0.68,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -637,6 +644,7 @@
         "min_width": 2.0,
         "velocity_width_mult": 0.4,
         "velocity_alpha_mult": 0.1,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 2,
         "fade_mode": 3,
         "enable_gradient": true,
@@ -723,8 +731,8 @@
       "head": {
         "enabled": true,
         "size": 16.0,
-        "squish_intensity": 2.5,
-        "squish_smoothing": 50.0,
+        "squish_intensity": 0.025,
+        "squish_smoothing": 0.5,
         "color": [
           1.0,
           0.95,
@@ -816,6 +824,7 @@
     "name": "Particle Firestorm",
     "description": "Blazing ember trail with dynamic gravity sparks and explosive shockwave bursts",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "FourLayerGlow",
       "general": {
@@ -829,10 +838,10 @@
       "trail": {
         "enabled": true,
         "length": 85,
-        "spring": 55.0,
-        "damping": 25.0,
-        "head_spring": 55.0,
-        "head_damping": 25.0,
+        "spring": 0.055,
+        "damping": 0.75,
+        "head_spring": 0.055,
+        "head_damping": 0.75,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -840,6 +849,7 @@
         "min_width": 2.0,
         "velocity_width_mult": 0.7,
         "velocity_alpha_mult": 0.2,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 2,
         "fade_mode": 2,
         "enable_gradient": true,
@@ -926,8 +936,8 @@
       "head": {
         "enabled": true,
         "size": 20.0,
-        "squish_intensity": 3.2,
-        "squish_smoothing": 55.0,
+        "squish_intensity": 0.032,
+        "squish_smoothing": 0.55,
         "color": [
           1.0,
           0.8,
@@ -1019,6 +1029,7 @@
     "name": "Rainbow Aurora",
     "description": "Continuous HSL spectrum cycling across the 4-layer master ribbon",
     "config": {
+      "schema_version": 2,
       "enabled": true,
       "effect_mode": "FourLayerGlow",
       "general": {
@@ -1032,10 +1043,10 @@
       "trail": {
         "enabled": true,
         "length": 80,
-        "spring": 50.0,
-        "damping": 30.0,
-        "head_spring": 50.0,
-        "head_damping": 30.0,
+        "spring": 0.05,
+        "damping": 0.7,
+        "head_spring": 0.05,
+        "head_damping": 0.7,
         "lazy_enabled": false,
         "lazy_radius": 30.0,
         "lazy_friction": 0.4,
@@ -1043,6 +1054,7 @@
         "min_width": 2.0,
         "velocity_width_mult": 0.5,
         "velocity_alpha_mult": 0.1,
+        "velocity_reference_speed": 20.0,
         "interpolation_steps": 2,
         "fade_mode": 3,
         "enable_gradient": true,
@@ -1129,8 +1141,8 @@
       "head": {
         "enabled": true,
         "size": 18.0,
-        "squish_intensity": 3.0,
-        "squish_smoothing": 50.0,
+        "squish_intensity": 0.03,
+        "squish_smoothing": 0.5,
         "color": [
           1.0,
           1.0,

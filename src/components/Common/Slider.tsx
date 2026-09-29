@@ -1,4 +1,5 @@
 import { Component } from 'solid-js';
+import { ResetParamButton } from './ResetParamButton';
 
 interface SliderProps {
   label: string;
@@ -7,6 +8,13 @@ interface SliderProps {
   max: number;
   step?: number;
   value: number;
+  /**
+   * The value this parameter ships with. When set, a circular-arrow button appears next to the
+   * readout that restores it, and the button is only enabled while the value differs — so a
+   * parameter that was never touched shows a dimmed, inert arrow instead of implying it needs
+   * resetting.
+   */
+  defaultValue?: number;
   /**
    * Display unit. `'%'` treats the value as a 0–1 fraction (0.5 → "50%"); for values that are
    * already percentages pass `format` instead.
@@ -71,6 +79,15 @@ export const Slider: Component<SliderProps> = (props) => {
           onInput={handleInput}
         />
         <span class="slider-val">{displayVal()}</span>
+        {props.defaultValue !== undefined && (
+          <ResetParamButton
+            defaultValue={props.defaultValue}
+            value={safeVal()}
+            label={props.label}
+            disabled={props.disabled}
+            onReset={(v) => props.onChange(v)}
+          />
+        )}
       </div>
     </div>
   );

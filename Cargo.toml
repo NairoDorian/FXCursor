@@ -31,3 +31,12 @@ incremental = false
 [profile.release.package."*"]
 opt-level = 3
 codegen-units = 1
+
+# Tauri 3 integration follows Handy_V2; the Specta family must resolve from one source.
+[patch.crates-io]
+tauri-specta = { git = "https://github.com/NairoDorian/tauri-specta-v3" }
+specta = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-macros = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-serde = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-typescript = { git = "https://github.com/specta-rs/specta.git", branch = "main" }
+specta-util = { git = "https://github.com/specta-rs/specta.git", branch = "main" }

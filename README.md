@@ -1,5 +1,16 @@
 # FXCursor
 
+> ⛔ **Never launch this app to test it.** The overlay is a full-desktop transparent window, and
+> launching it puts real windows on the user's screen. In particular **never run
+> `target\debug\fxcursor.exe` directly**: a debug build has no front end bundled in (it loads
+> from `http://localhost:1420`, see `devUrl` in `tauri.conf.json`), so the webview shows an error
+> page and the overlay is drawn **opaque** instead of transparent. That has twice left a stuck
+> non-transparent window across the desktop that needed a **Windows reboot**. `scripts/snapshots/*.ps1`
+> spawn `fxcursor.exe` too, so they count as launching the app. `bun run tauri dev` is for the
+> **user**, never for an automated agent. Verify with `bun run validate` and
+> `rtk cargo test --workspace` instead — both are fully headless.
+> Full details: [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md).
+
 [![Tauri 2](https://img.shields.io/badge/Tauri-v2.11-24C8D5?style=flat-square&logo=tauri&logoColor=white)](https://v2.tauri.app)
 [![Bun](https://img.shields.io/badge/Bun-v1.4-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
 [![SolidJS](https://img.shields.io/badge/SolidJS-v2.0.0--rc.7-2c4f7c?style=flat-square&logo=solid&logoColor=white)](https://solidjs.com)
@@ -57,7 +68,7 @@ Built with **Tauri 2**, **Bun**, **SolidJS 2**, **TypeScript 7**, **wgpu 30** (D
 - **Effect modes**: Full, Ribbon only, Click effects only, Satellites only, Minimal (core + spine), switchable from the header.
 - **Telemetry**: live fps, CPU per frame and geometry counts in the Developer Hub; Rust logs stream into the Dev Console.
 - **Idle friendly**: GPU submissions stop when nothing on screen can change.
-- **Legacy-faithful trail**: an optional LazyBrush dead-zone filters the pointer, the head is a Windhawk spring-damper toward that brush, the body is a spring chain with 0.3 second-neighbour coupling on a **1/120 s reference frame** (Windhawk `kReferenceFrameTime`), and a **512 px teleport-only** clamp bounds stretch on monitor jumps. As in Windhawk, V3 and the TD trail, width, fade and blur follow the **node index**, so the ribbon retracts into the cursor after a stop and rests as a 4-layer dot. Frames are **vsync-locked** (`Fifo`) with the pointer sampled right after the vblank; the Studio preview runs the same math (`src/lib/trail.ts`, tested against a Rust reference trace). **Defaults are trail-only** (`effect_mode: Ribbon`; head, ripples, particles, satellites off).
+- **Trail**: an optional LazyBrush dead-zone filters the pointer, the head is a spring-damper toward that brush, the body is a spring chain with 0.3 second-neighbour coupling on a **1/120 s reference frame**, and a **512 px teleport-only** clamp bounds stretch on monitor jumps. Width, fade and blur follow the **node index**, so the ribbon retracts into the cursor after a stop and rests as a 4-layer dot. Frames are **vsync-locked** (`Fifo`) to the refresh rate of whichever monitor the pointer is on, with the pointer sampled right after the vblank; the Studio preview runs the same math (`src/lib/trail.ts`, tested against a Rust reference trace). **Defaults are trail-only** (`effect_mode: Ribbon`; head, ripples, particles, satellites off).
 - **On-overlay FPS HUD** (`fps_counter`): frames per second drawn on the overlay with a 3×5 bitmap font, anchored to any corner.
 - **GPU cursor bypass** (`gpu_cursor`): the system cursor shape is extracted and redrawn on the overlay — rotates with movement, bounces on click, and can hide the real cursor (restored on exit/panic).
 - **Custom presets**: save the current look under a name; user presets live next to `config.json` and appear beside the six built-ins.
@@ -172,7 +183,6 @@ FXCursor/
 ├── scripts/                    # update-deps, before-commit, generate-arch, package-portable, version
 │   └── snapshots/              # PowerShell drivers: trail shapes, motion bursts, contact sheets
 ├── test/                       # bun tests + shared Rust ⇄ TS fixtures
-└── legacy/                     # V3 React app (project_cursor), original Windhawk mods, old scripts
 ```
 
 ---

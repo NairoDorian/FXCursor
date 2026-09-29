@@ -2,12 +2,12 @@
 //!
 //! Responsibilities:
 //! - Resolve the on-disk location of `config.json` (portable-aware via [`crate::portable`]).
-//! - Load the file through `fxcursor_protocol::deserialize_with_self_healing`, so a single
-//!   broken field is reset to its default instead of discarding the whole document.
+//! - Load the file through `fxcursor_protocol::deserialize_config`, which converts older
+//!   parameter units and then heals single broken fields instead of discarding the document.
 //! - Write the healed document back (with a `.bak` copy of the corrupted original).
 //! - Provide a debounced background auto-saver so slider drags do not hammer the disk.
 
-use fxcursor_protocol::{deserialize_with_self_healing, AppConfig, RepairOutcome};
+use fxcursor_protocol::{AppConfig, RepairOutcome};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::Duration;
@@ -72,14 +72,18 @@ pub fn load_or_repair(path: &Path) -> AppConfig {
         }
     };
 
-    let mut outcome: RepairOutcome<AppConfig> = match deserialize_with_self_healing(&raw) {
+    // `deserialize_config` converts older parameter units on the raw JSON before the healing
+    // pass fills in defaults; an old file (e.g. `spring: 50`) is therefore converted rather than
+    // clamped to the new 0..1 bounds.
+    let mut outcome: RepairOutcome<AppConfig> = match fxcursor_protocol::deserialize_config(&raw)
+    {
         Ok(o) => o,
         Err(err) => {
             log::error!("[settings] self-healing failed ({err}); using defaults");
             return AppConfig::default();
         }
     };
-    // Types are healed above; ranges here (a hand-edited file can hold anything).
+    // Ranges here (a hand-edited file can hold anything).
     let clamped = outcome.value.sanitize();
     if !clamped.is_empty() {
         log::warn!("[settings] clamped out-of-range value(s): {clamped:?}");
@@ -247,7 +251,30 @@ mod tests {
         cfg.trail.spring = 9_000.0;
         save(&path, &cfg).unwrap();
         let loaded = load_or_repair(&path);
-        assert_eq!(loaded.trail.spring, 500.0);
+        assert_eq!(loaded.trail.spring, 1.0);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("json.bak"));
+    }
+
+    #[test]
+    fn a_pre_units_config_file_is_converted_not_clamped() {
+        let path = temp_path("legacy-units.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "schema_version": 1,
+                "trail": { "spring": 50.0, "damping": 30.0, "head_spring": 40.0, "head_damping": 20.0 }
+            }"#,
+        )
+        .unwrap();
+        let loaded = load_or_repair(&path);
+        assert_eq!(loaded.trail.spring, 0.05);
+        assert_eq!(loaded.trail.damping, 0.7);
+        assert_eq!(loaded.trail.head_spring, 0.04);
+        assert_eq!(loaded.trail.head_damping, 0.8);
+        assert_eq!(loaded.schema_version, fxcursor_protocol::CURRENT_SCHEMA_VERSION);
+        // The converted file is rewritten, so a second load is a no-op.
+        assert_eq!(load_or_repair(&path), loaded);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("json.bak"));
     }

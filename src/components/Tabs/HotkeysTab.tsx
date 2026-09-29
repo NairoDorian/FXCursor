@@ -2,6 +2,14 @@ import { Component, createEffect, createSignal } from 'solid-js';
 import { SectionCard } from '../Common/SectionCard';
 import { commands, type GeneralConfig } from '../../lib/bindings';
 import { isTauri } from '../../lib/tauri';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+import { ResetParamButton } from '../Common/ResetParamButton';
+
+const DEFAULTS = getDefaultConfig().general;
+const HOTKEY_KEYS = ['global_hotkey'] as const;
+const PERF_KEYS = ['max_fps'] as const;
+const LIFECYCLE_KEYS = ['autostart', 'minimize_to_tray', 'start_minimized'] as const;
 
 interface HotkeysTabProps {
   general: GeneralConfig;
@@ -59,6 +67,8 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
       <SectionCard
         title="Global Keyboard Shortcuts"
         desc="System-wide hotkeys active across all applications and full-screen games"
+        modified={isModified(props.general, DEFAULTS, HOTKEY_KEYS)}
+        onReset={() => props.onChange(resetFields(props.general, DEFAULTS, HOTKEY_KEYS))}
       >
         <div class="control-row">
           <div class="control-label">
@@ -100,6 +110,8 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
       <SectionCard
         title="Performance"
         desc="Frame pacing for the overlay. 0 locks every frame to the display's vblank (smoothest). A lower cap saves power but cannot be perfectly even; a cap above the refresh rate renders unsynchronised for lower latency."
+        modified={isModified(props.general, DEFAULTS, PERF_KEYS)}
+        onReset={() => props.onChange(resetFields(props.general, DEFAULTS, PERF_KEYS))}
       >
         <div class="control-row">
           <div class="control-label">
@@ -114,11 +126,17 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
             type="range"
             aria-label="Frame rate limit"
             min="0"
-            max="360"
-            step="10"
-            value={props.general.max_fps}
+            max="1000"
+            step={refreshHz() ? Math.max(1, Math.round(refreshHz()! / 10) * 10) : 10}
+            value={props.general.max_fps ?? 0}
             onInput={(e) => setMaxFps(Number(e.currentTarget.value))}
             style="width: 220px;"
+          />
+          <ResetParamButton
+            defaultValue={DEFAULTS.max_fps ?? 0}
+            value={props.general.max_fps ?? 0}
+            label="Frame rate limit"
+            onReset={(v) => setMaxFps(v)}
           />
         </div>
       </SectionCard>
@@ -126,6 +144,8 @@ export const HotkeysTab: Component<HotkeysTabProps> = (props) => {
       <SectionCard
         title="Application Lifecycle & System Resident Settings"
         desc="Startup, tray behavior, and background resident execution"
+        modified={isModified(props.general, DEFAULTS, LIFECYCLE_KEYS)}
+        onReset={() => props.onChange(resetFields(props.general, DEFAULTS, LIFECYCLE_KEYS))}
       >
         <div class="control-row">
           <div class="control-label">

@@ -7,7 +7,7 @@ describe('FXCursor V4 Presets Integrity Suite', () => {
     expect(def.enabled).toBe(true);
     expect(def.trail.layers.length).toBe(4);
 
-    // Out of the box only the ribbon trail runs (legacy V3 / user default).
+    // Out of the box only the ribbon trail runs.
     expect(def.effect_mode).toBe('Ribbon');
     expect(def.trail.enabled).toBe(true);
     expect(def.head.enabled).toBe(false);

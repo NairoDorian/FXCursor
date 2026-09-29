@@ -3,11 +3,35 @@ import { SectionCard } from '../Common/SectionCard';
 import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
 import type { TrailConfig } from '../../lib/presets';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
 
 interface TrailTabProps {
   trail: TrailConfig;
   onChange: (newTrail: TrailConfig) => void;
 }
+
+const DEFAULTS = getDefaultConfig().trail;
+
+/** Which fields each card owns, so one card's reset never touches its neighbour's sliders. */
+const HEAD_KEYS = ['head_spring', 'head_damping'] as const;
+const LAZY_KEYS = ['lazy_enabled', 'lazy_radius', 'lazy_friction'] as const;
+const BODY_KEYS = [
+  'spring',
+  'damping',
+  'length',
+  'cursor_size',
+  'min_width',
+  'interpolation_steps',
+] as const;
+const RESPONSE_KEYS = [
+  'fade_mode',
+  'velocity_width_mult',
+  'velocity_alpha_mult',
+  'velocity_reference_speed',
+  'enable_gradient',
+  'adaptive_quality',
+] as const;
 
 export const TrailTab: Component<TrailTabProps> = (props) => {
   const update = (patch: Partial<TrailConfig>) => {
@@ -22,7 +46,9 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
       {/* Head Kinematics (the header switch is the master toggle for the whole ribbon) */}
       <SectionCard
         title="Ribbon Trail · Head Kinematics"
-        desc="Windhawk spring-damper pulling the leading node toward the pointer (or the Lazy Brush); the switch turns the whole trail on or off"
+        desc="Spring-damper pulling the leading node toward the pointer (or the Lazy Brush); the switch turns the whole trail on or off"
+        modified={isModified(props.trail, DEFAULTS, HEAD_KEYS)}
+        onReset={() => props.onChange(resetFields(props.trail, DEFAULTS, HEAD_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable ribbon trail"
@@ -32,21 +58,23 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
         }
       >
         <Slider
-          label="Head Spring Strength"
-          sub="Spring constant ÷1000 per 1/120 s (1 = loose and lagging, 500 = glued to the pointer)"
-          min={1}
-          max={500}
-          step={1}
+          label="Head Spring"
+          sub="Pull of the ribbon head toward the pointer, as a fraction of the gap (0 = free drift, 1 = snaps shut)"
+          min={0}
+          max={1}
+          step={0.005}
           value={props.trail.head_spring}
+          defaultValue={DEFAULTS.head_spring}
           onChange={(v) => update({ head_spring: v })}
         />
         <Slider
           label="Head Friction"
-          sub="Velocity lost per 1/120 s in percent (0 = springy overshoot, 99 = heavy damping)"
+          sub="Fraction of velocity the head keeps per frame (0 = stops dead, 1 = frictionless)"
           min={0}
-          max={99}
-          step={1}
+          max={1}
+          step={0.005}
           value={props.trail.head_damping}
+          defaultValue={DEFAULTS.head_damping}
           onChange={(v) => update({ head_damping: v })}
         />
       </SectionCard>
@@ -55,6 +83,8 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
       <SectionCard
         title="Lazy Brush"
         desc="Dead-zone smoother between the raw pointer and the ribbon: micro-jitter never reaches the trail"
+        modified={isModified(props.trail, DEFAULTS, LAZY_KEYS)}
+        onReset={() => props.onChange(resetFields(props.trail, DEFAULTS, LAZY_KEYS))}
       >
         <div class="control-row">
           <div class="control-label">
@@ -79,6 +109,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           step={1}
           unit="px"
           value={props.trail.lazy_radius ?? 30}
+          defaultValue={DEFAULTS.lazy_radius}
           onChange={(v) => update({ lazy_radius: v })}
         />
         <Slider
@@ -88,6 +119,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           max={0.99}
           step={0.01}
           value={props.trail.lazy_friction ?? 0.4}
+          defaultValue={DEFAULTS.lazy_friction}
           onChange={(v) => update({ lazy_friction: v })}
         />
       </SectionCard>
@@ -95,33 +127,38 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
       {/* Trail Body Chain Physics */}
       <SectionCard
         title="Trail Body Spring Chain Physics"
-        desc="Windhawk spring-damper chain with 0.3× second-neighbour coupling (a 512 px gap guard only catches teleports)"
+        desc="Spring-damper chain with 0.3× second-neighbour coupling (a 512 px gap guard only catches teleports)"
+        modified={isModified(props.trail, DEFAULTS, BODY_KEYS)}
+        onReset={() => props.onChange(resetFields(props.trail, DEFAULTS, BODY_KEYS))}
       >
         <Slider
-          label="Trail Segment Spring Strength"
-          sub="Spring constant ÷1000 between consecutive nodes (1 = long lazy tail, 500 = short stiff tail)"
-          min={1}
-          max={500}
-          step={1}
+          label="Body Spring"
+          sub="Pull of each node toward the one ahead, as a fraction of the gap (0 = no pull, 1 = stiff)"
+          min={0}
+          max={1}
+          step={0.005}
           value={props.trail.spring}
+          defaultValue={DEFAULTS.spring}
           onChange={(v) => update({ spring: v })}
         />
         <Slider
-          label="Trail Segment Friction / Damping"
-          sub="Velocity lost per 1/120 s in percent along the body (0 = wobbly, 99 = sluggish)"
+          label="Body Friction"
+          sub="Fraction of velocity each body node keeps per frame (0 = stops dead, 1 = frictionless)"
           min={0}
-          max={99}
-          step={1}
+          max={1}
+          step={0.005}
           value={props.trail.damping}
+          defaultValue={DEFAULTS.damping}
           onChange={(v) => update({ damping: v })}
         />
         <Slider
           label="Trail Node Count (Length)"
-          sub="Nodes in the chain (4 - 150); the fade and width taper run over the node index"
+          sub="Nodes in the chain (4 - 500); the fade and width taper run over the node index"
           min={4}
-          max={150}
+          max={500}
           step={1}
           value={props.trail.length}
+          defaultValue={DEFAULTS.length}
           onChange={(v) => update({ length: v })}
         />
         <Slider
@@ -132,6 +169,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           step={1}
           unit="px"
           value={props.trail.cursor_size}
+          defaultValue={DEFAULTS.cursor_size}
           onChange={(v) => update({ cursor_size: v })}
         />
         <Slider
@@ -142,6 +180,7 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           step={0.5}
           unit="px"
           value={props.trail.min_width ?? 2.0}
+          defaultValue={DEFAULTS.min_width}
           onChange={(v) => update({ min_width: v })}
         />
         <Slider
@@ -149,13 +188,14 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
           sub={
             props.trail.adaptive_quality
               ? 'Ignored while Adaptive Quality picks the sample density from the curvature'
-              : 'Fixed Catmull-Rom sub-samples per node segment (1 - 10)'
+              : 'Fixed Catmull-Rom sub-samples per node segment (1 - 32)'
           }
           min={1}
-          max={10}
+          max={32}
           step={1}
           disabled={props.trail.adaptive_quality}
           value={props.trail.interpolation_steps}
+          defaultValue={DEFAULTS.interpolation_steps}
           onChange={(v) => update({ interpolation_steps: v })}
         />
       </SectionCard>
@@ -164,6 +204,8 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
       <SectionCard
         title="Dynamic Velocity & Fade Profiles"
         desc="Speed-based ribbon expansion, brightness amplification, and mathematical decay curves"
+        modified={isModified(props.trail, DEFAULTS, RESPONSE_KEYS)}
+        onReset={() => props.onChange(resetFields(props.trail, DEFAULTS, RESPONSE_KEYS))}
       >
         <div class="control-row">
           <div class="control-label">
@@ -185,23 +227,36 @@ export const TrailTab: Component<TrailTabProps> = (props) => {
 
         <Slider
           label="Velocity Width Multiplier"
-          sub="Extra width at full speed (reached at 2400 px/s, as in Windhawk)"
+          sub="Extra width at the reference speed below"
           min={0}
           max={5.0}
           step={0.05}
           unit="x"
           value={props.trail.velocity_width_mult}
+          defaultValue={DEFAULTS.velocity_width_mult}
           onChange={(v) => update({ velocity_width_mult: v })}
         />
         <Slider
           label="Velocity Alpha Multiplier"
-          sub="Extra opacity at full speed (same speed scale as the width boost)"
+          sub="Extra opacity at the reference speed below"
           min={0}
           max={5.0}
           step={0.05}
           unit="x"
           value={props.trail.velocity_alpha_mult}
+          defaultValue={DEFAULTS.velocity_alpha_mult}
           onChange={(v) => update({ velocity_alpha_mult: v })}
+        />
+        <Slider
+          label="Velocity Reference Speed"
+          sub="Speed (px per 1/120 s) at which the two boosts above reach 100% — 20 = 2400 px/s"
+          min={1}
+          max={200}
+          step={1}
+          unit="px"
+          value={props.trail.velocity_reference_speed ?? 20}
+          defaultValue={DEFAULTS.velocity_reference_speed}
+          onChange={(v) => update({ velocity_reference_speed: v })}
         />
 
         <div class="control-row">

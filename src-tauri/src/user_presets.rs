@@ -3,8 +3,9 @@
 //! `PresetInfo` shape, so the Studio treats both kinds alike; only user presets (ids starting
 //! with [`USER_PREFIX`]) can be deleted.
 
-use fxcursor_protocol::{deserialize_with_self_healing, AppConfig, PresetInfo, RepairOutcome};
+use fxcursor_protocol::{deserialize_with_self_healing, migrate_value, AppConfig, PresetInfo, RepairOutcome};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
@@ -52,6 +53,28 @@ pub fn is_user_preset(id: &str) -> bool {
     id.starts_with(USER_PREFIX)
 }
 
+/// Reads a preset file, converting the parameter units of presets saved by an older build.
+///
+/// The migration runs on the raw JSON before the healing deserializer fills in missing fields,
+/// because that pass would otherwise stamp the current `schema_version` onto the embedded
+/// `config` and skip the conversion.
+fn load_preset_file(raw: &str) -> Result<RepairOutcome<PresetFile>, String> {
+    let Ok(mut value) = serde_json::from_str::<Value>(raw) else {
+        return deserialize_with_self_healing::<PresetFile>(raw);
+    };
+    let Some(config) = value.get_mut("config") else {
+        return deserialize_with_self_healing::<PresetFile>(raw);
+    };
+    if !migrate_value(config) {
+        return deserialize_with_self_healing::<PresetFile>(raw);
+    }
+    let migrated = serde_json::to_string(&value).map_err(|e| e.to_string())?;
+    let mut outcome = deserialize_with_self_healing::<PresetFile>(&migrated)?;
+    outcome.repaired_paths.insert(0, "<parameter units>".to_string());
+    outcome.needs_rewrite = true;
+    Ok(outcome)
+}
+
 fn file_for(dir: &Path, id: &str) -> PathBuf {
     dir.join(format!("{id}.json"))
 }
@@ -75,7 +98,7 @@ pub fn list(app: &AppHandle) -> Vec<PresetInfo> {
                 return None;
             }
             let raw = std::fs::read_to_string(&path).ok()?;
-            match deserialize_with_self_healing::<PresetFile>(&raw) {
+            match load_preset_file(&raw) {
                 Ok(RepairOutcome { value, repaired_paths, .. }) => {
                     if !repaired_paths.is_empty() {
                         log::warn!(
@@ -185,5 +208,16 @@ mod tests {
         let healed: RepairOutcome<PresetFile> = deserialize_with_self_healing(partial).unwrap();
         assert_eq!(healed.value.config.trail.length, 12);
         assert!(!healed.repaired_paths.is_empty());
+    }
+
+    #[test]
+    fn a_preset_saved_with_old_parameter_units_is_converted() {
+        // No `schema_version` anywhere: an old preset predates it, so it must be converted
+        // rather than clamped to the current 0..1 bounds (which would give a dead trail).
+        let raw = r#"{"name":"Old","config":{"trail":{"spring":50.0,"damping":30.0}}}"#;
+        let out = load_preset_file(raw).unwrap();
+        assert_eq!(out.value.config.trail.spring, 0.05);
+        assert_eq!(out.value.config.trail.damping, 0.7);
+        assert_eq!(out.value.config.schema_version, fxcursor_protocol::CURRENT_SCHEMA_VERSION);
     }
 }

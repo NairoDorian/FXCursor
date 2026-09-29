@@ -14,6 +14,13 @@ import {
 } from './lib/presets';
 import { toast } from './lib/toast';
 import { applyThemeAccent } from './lib/theme';
+import {
+  TAB_SECTIONS,
+  areLayersModified,
+  isSectionModified,
+  resetLayers,
+  resetSections,
+} from './lib/reset';
 
 import { LayersTab } from './components/Tabs/LayersTab';
 import { TrailTab } from './components/Tabs/TrailTab';
@@ -56,6 +63,42 @@ export function AppContent() {
   const [activeTab, setActiveTab] = createSignal<Tab>('layers');
   const [config, setConfig] = createSignal<AppConfig>(getDefaultConfig());
   const [currentPresetId, setCurrentPresetId] = createSignal('master_4layer');
+
+  // Page-level reset. The 4-Layer tab edits `trail.layers` inside the trail section, so it gets
+  // a layers-only reset that leaves the trail physics on the Trail tab untouched.
+  const pageSections = () => TAB_SECTIONS[activeTab()] ?? [];
+  const pageModified = () =>
+    activeTab() === 'layers'
+      ? areLayersModified(config())
+      : pageSections().some((section) => isSectionModified(config(), section));
+  const pageResetLabel = () => {
+    switch (activeTab()) {
+      case 'layers':
+        return 'Ribbon layers differ from their defaults';
+      case 'trail':
+        return 'Trail physics differs from its defaults';
+      case 'head':
+        return 'Head and GPU cursor differ from their defaults';
+      case 'ripples':
+        return 'Click ripples differ from their defaults';
+      case 'particles':
+        return 'Particles differ from their defaults';
+      case 'satellites':
+        return 'Satellites differ from their defaults';
+      case 'hotkeys':
+        return 'Hotkeys and tray settings differ from their defaults';
+      default:
+        return '';
+    }
+  };
+  const resetActivePage = () => {
+    if (activeTab() === 'layers') {
+      setConfig(resetLayers(config()));
+      return;
+    }
+    const sections = pageSections();
+    if (sections.length > 0) setConfig(resetSections(config(), sections));
+  };
 
   let isInternalSync = false;
   let updateAnimId: number | undefined;
@@ -403,7 +446,7 @@ export function AppContent() {
           <div>
             <div class="brand-title">FXCursor</div>
             <span class="brand-version">
-              Windhawk 4-Layer Master Design (wgpu: Direct3D 12 / Vulkan / Metal)
+              FXCursor 4-Layer Master Design (wgpu: Direct3D 12 / Vulkan / Metal)
             </span>
           </div>
         </div>
@@ -527,6 +570,22 @@ export function AppContent() {
           About
         </button>
       </nav>
+
+      {/* Page-level reset: restores every parameter the visible tab owns. */}
+      <Show when={pageResetLabel()}>
+        <div class="page-reset-bar">
+          <span class="page-reset-hint">{pageResetLabel()}</span>
+          <button
+            type="button"
+            class={`reset-section ${pageModified() ? 'active' : ''}`}
+            disabled={!pageModified()}
+            title="Restore every parameter on this page to its default"
+            onClick={resetActivePage}
+          >
+            Reset this page
+          </button>
+        </div>
+      </Show>
 
       {/* Content & Live Preview */}
       <main class="app-content">

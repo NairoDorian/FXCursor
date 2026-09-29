@@ -1,18 +1,107 @@
 # Changelog
 
+## [Unreleased]
+
+### Process — never launch the app to test it
+
+- Added [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md) and mirrored the rule
+  into `AGENTS.md`, `README.md`, `PROGRESS.md`, `memory.md`, `repo-summary.md` and
+  `repomix-instruction.md`. `bun run tauri dev` has been removed from the sanctioned-command
+  table in `AGENTS.md`.
+- **What went wrong — the actual root cause:** `src-tauri/tauri.conf.json` sets
+  `"beforeDevCommand": "bun run dev"` and `"devUrl": "http://localhost:1420"`. A **debug build
+  has no front end bundled into it** — it is compiled to load its UI from the Vite dev server,
+  and `bun run tauri dev` is what starts that server. Running `target\debug\fxcursor.exe` on its
+  own, with nothing serving port 1420, means the Studio webview loads nothing and renders a
+  **webview error page**, the overlay draws that opaque content instead of being transparent, and
+  the result is a **large opaque window across the whole desktop** that will not go away. That
+  happened **twice** and the user had to **reboot Windows** to recover; the overlay covers the
+  entire virtual desktop, so a broken overlay is a broken desktop. There is no "just the overlay"
+  or "headless-ish" invocation, and **no front end means the overlay is not transparent.**
+- A second mechanism compounded it: `scripts/snapshots/*.ps1` start a **new**
+  `fxcursor.exe --capture …` and rely on the single-instance plugin to forward the request. With
+  no instance running, that process becomes a *primary* instance — it ignores the capture args
+  and comes up with no front end, i.e. the same opaque overlay. So running a snapshot script is
+  itself launching the app; there is no "capture only" mode.
+- `-WindowStyle Hidden` / `-WindowStyle Minimized` was tried as a "gentler" start. It creates
+  the same real windows and still hits the missing-front-end problem, so the overlay is still
+  opaque; the window style only hides the evidence, which makes the damage harder to spot and to
+  recover from. Now explicitly forbidden rather than treated as a workaround.
+- **Verification is headless from here on:** `bun run validate` (7 gates) and
+  `rtk cargo test --workspace` cover config, presets, Rust ⇄ TypeScript parity and the trail
+  physics, because `TrailChain` / `build_samples` / `build_layer_capsules` are pure CPU. A change
+  that genuinely cannot be checked that way is now handed to the user to run and reported as
+  unverified, instead of an agent opening a window to look at it.
+
+### Reverted — trail geometry changes that made the trail jitter
+
+- Attempts to fix the crescent-on-stop report changed the ribbon geometry: duplicating the
+  endpoint phantom, adding a fold-removal pass, and adding a second arc-length-based progress for
+  width. Each of these made the trail jitter, so **all of it was reverted** and `build_samples`
+  is byte-identical to the last known-good build again. The renderer diff is now only the
+  parameter-unit change described below. The crescent is still open — see `PROGRESS.md`.
+
+### Changed — parameters are now in natural units
+
+Springs and frictions are stored and displayed exactly as the slider shows them. Nothing is
+divided by 1000 or expressed in a percentage behind your back any more:
+
+| Parameter              | Before              | After        |
+| :--------------------- | :------------------ | :----------- |
+| `trail.spring`         | `1`–`500` (÷1000)   | `0`–`1`      |
+| `trail.head_spring`    | `1`–`500` (÷1000)   | `0`–`1`      |
+| `trail.damping`        | `0`–`99` (% lost)   | `0`–`1` (kept) |
+| `trail.head_damping`   | `0`–`99` (% lost)   | `0`–`1` (kept) |
+| `head.squish_intensity`| `0`–`100` (%)       | `0`–`1`      |
+| `head.squish_smoothing`| `1`–`100` (%)       | `0`–`1`      |
+
+`damping` is now the fraction of velocity a node *keeps* per reference frame (`0.7` = keeps 70%),
+which is the quantity the integrator actually consumes. The GUI exposes the full `0`–`1` range
+for every one of them; `sanitize` uses the same bounds, so no value the UI can produce is ever
+rewritten. `trail.length` goes from 4–150 to **4–500** nodes and `interpolation_steps` from 1–10
+to 1–32, matching the range the renderer has always accepted.
+
+Existing `config.json` files and saved user presets are **converted on load**
+(`crates/fxcursor-protocol/src/migrate.rs`, keyed on a new `schema_version` field) rather than
+clamped — `spring: 50` becomes `0.05`, `damping: 30` becomes `0.7`.
+
+- **New parameter** `trail.velocity_reference_speed` (default `20`): the speed, in px per 1/120 s,
+  at which the velocity width/alpha boosts reach 100%. It replaces a hard-coded `/20` divisor, so
+  the normalisation is now a parameter instead of a hidden constant.
+
+### Added — reset to default at every level
+
+- A circular-arrow button next to every slider, dimmed and inert until that parameter differs
+  from its default.
+- A **Default** button in every section card header, restoring just that section.
+- A **Reset this page** bar under the tab nav, restoring every section the visible tab owns. The
+  4-Layer tab resets only the ribbon layers, so the trail physics on the Trail tab survives.
+
+### Fixed — startup
+
+- `tauri-plugin-shell`'s `shell:allow-open` permission no longer exists in the v3 alpha (it was
+  `shell:allow-execute`), and the build aborted on the unknown permission.
+- The autostart plugin renamed its manager extension from `autolaunch()` to `autostart()`.
+
+### Changed — standalone
+
+Every reference to other projects has been removed from the code, comments, UI strings and docs.
+`legacy/` and the handover notes that only described ports from it are gone; the repository is
+now entirely self-contained.
+
 ## [Unreleased] - 2026-09-23 (session 11: full audit)
 
-### Fixed — trail (compared line by line with Windhawk D3D/GDI+, V3 and TD)
+### Fixed — trail
 
-- **Taper by node index, not arc length**: every legacy build computes `progress = (i + t)/(N − 1)`. Arc length (session 9) kept the trail at full length after a stop, then collapsed it from the far end, and made width/alpha "breathe" whenever the total length changed. The index is now carried through the near-duplicate merge, which fixes the original post-merge distortion without changing the parameterisation.
-- **Resting dot**: a collapsed chain drew nothing, so the ribbon popped in and out depending on whether nodes had merged when the loop parked; it now draws Windhawk's 4-layer dot.
+- **Taper by node index, not arc length**: `progress = (i + t)/(N − 1)`. Arc length (session 9) kept the trail at full length after a stop, then collapsed it from the far end, and made width/alpha "breathe" whenever the total length changed. The index is now carried through the near-duplicate merge, which fixes the original post-merge distortion without changing the parameterisation.
+- **Resting dot**: a collapsed chain drew nothing, so the ribbon popped in and out depending on whether nodes had merged when the loop parked; it now draws a 4-layer dot.
 - **Velocity boost `/20`** again (session 10's `/10` was based on a wrong unit assumption; legacy uses `/20` in the same 1/120 s units) — the trail no longer looks fat and pulsing at normal speeds.
 - **Jump at the start of every movement**: the first frame after an idle park integrated the whole park (up to 100 ms) toward the new pointer.
 - **Periodic stutter**: `Mailbox` + sleep pacing drifted against vblank; now `Fifo`, latency 1, next frame acquired before the pointer is sampled.
 - **Stalls while using the Studio**: a per-frame `window.inner_size()` blocked the render thread on the Tauri main thread.
 - **Edge jitter**: the hook's unclipped coordinates alternated with `GetCursorPos`; position now comes from the poll only.
 - Rest detection waits for the head to reach the pointer and the LazyBrush to settle; per-vertex blur; NaN guard; fade mode 4 (Smoothstep) implemented.
-- **Squishy head**: velocity in px per reference frame (px/s saturated the squish on any motion), eased position and exponential smoothing as in Windhawk.
+- **Squishy head**: velocity in px per reference frame (px/s saturated the squish on any motion), eased position and exponential smoothing.
 
 ### Fixed — app
 
@@ -31,8 +120,8 @@
 
 ### Fixed
 
-- **Trail speed / "accelerating on flicks" (session 10)**: three root causes found by re-reading Windhawk + V3:
-  1. `REFERENCE_FRAME` was `1/60` but Windhawk `kReferenceFrameTime` and V3 both use **`1/120`** — every spring impulse per second was halved and friction softened, so the ribbon lagged far behind legacy and felt slow.
+- **Trail speed / "accelerating on flicks" (session 10)**: three root causes found by re-deriving the physics:
+   1. `REFERENCE_FRAME` was `1/60` but the correct reference frame is **`1/120`** — every spring impulse per second was halved and friction softened, so the ribbon lagged far behind the pointer and felt slow.
   2. The distance clamp was **64 px**, *below* the chain's natural steady-state gap during normal fast motion (`gap ≈ V×(1−f)/(k×f) ≈ 8.6×` px/step). It fired every frame of motion and injected `delta/dt_scale` into velocity (TD does this at fixed 60 Hz; re-applied every sub-step it slingshots followers). Clamp is now **512 px, teleport-guard only, and inelastic** (strips separating velocity only — never adds the correction to `vx`).
   3. Velocity-width normalisation rescaled for the 1/120 units (`speed/10` instead of `/20`) so width/alpha boost keeps its physical threshold.
 - **Trail-only defaults**: `effect_mode: Ribbon`; `head` / `ripple` / `particles` default `enabled: false` (satellites/rainbow/fps/gpu_cursor already off). Matches V3 factory defaults. Existing `config.json` keeps its stored flags — use **Reset Defaults** once to pick these up. Built-in presets still enable their own effects explicitly (TS mirror updated to match).
@@ -63,7 +152,7 @@
 
 ### Added
 
-- **Trail physics rewrite + LazyBrush** (session 9): replaced the overcomplicated first-order pursuit chain (head EMA → `follow_step` → 4 `lead_nodes` → walls/`block_overtake`) with the proven legacy formulation — optional **LazyBrush** dead-zone pointer filter (`lazy_enabled`/`lazy_radius`/`lazy_friction`, TD-style `1-√(1-(1-f)²)` friction), a **Windhawk spring-damper** head and body (0.3 second-neighbour coupling, exponential friction, existing 50/30 defaults), and a **clamped 64 px distance constraint** with velocity correction that bounds overshoot on flicks/teleports. `Sample.progress` is now **arc-length** (was segment-index), fixing uneven width/fade/blur taper near merged nodes and adaptive samples. WGSL depth tiebreaker inverted so the **head wins coverage ties** at folds (was `seg × 1e-6`, which favoured the tail). `lead_nodes` removed from config/presets/UI; `lazy_*` fields added with serde defaults (self-healing). The ribbon **no longer prepends the raw pointer** ahead of the spring head (legacy builds samples from the chain only — the prepend had stretched a full-width capsule across the spring lag and produced a head blob). Renderer tests rewritten (bounded overshoot, LazyBrush dead-zone, constraint clamp, arc-progress); LivePreview mirrors the new chain. Capsule-union depth/stencil pass unchanged (judged sound).
+- **Trail physics rewrite + LazyBrush** (session 9): replaced the overcomplicated first-order pursuit chain (head EMA → `follow_step` → 4 `lead_nodes` → walls/`block_overtake`) with the proven spring-damper formulation — optional **LazyBrush** dead-zone pointer filter (`lazy_enabled`/`lazy_radius`/`lazy_friction`, dead-zone friction `1-√(1-(1-f)²)`), a **spring-damper** head and body (0.3 second-neighbour coupling, exponential friction), and a **clamped 64 px distance constraint** with velocity correction that bounds overshoot on flicks/teleports. `Sample.progress` is now **arc-length** (was segment-index), fixing uneven width/fade/blur taper near merged nodes and adaptive samples. WGSL depth tiebreaker inverted so the **head wins coverage ties** at folds (was `seg × 1e-6`, which favoured the tail). `lead_nodes` removed from config/presets/UI; `lazy_*` fields added with serde defaults (self-healing). The ribbon **no longer prepends the raw pointer** ahead of the spring head (samples come from the chain only — the prepend had stretched a full-width capsule across the spring lag and produced a head blob). Renderer tests rewritten (bounded overshoot, LazyBrush dead-zone, constraint clamp, arc-progress); LivePreview mirrors the new chain. Capsule-union depth/stencil pass unchanged (judged sound).
 - **GPU Cursor Bypass** (`gpu_cursor`): the active OS cursor shape is extracted on Windows (`GetCursorInfo` → `GetIconInfo` → `GetDIBits`, premultiplied RGBA8, per-handle cache), drawn as an on-top textured quad on the overlay with smoothed movement rotation (arrow only), a sine-bump click bounce, and an optional global arrow hide via `SetSystemCursor` — restored on disable, Tauri exit and panic. Config struct + Studio section in the Head tab; renderer pipeline in `crates/fxcursor-render` (`vs_cursor`/`fs_cursor`, group-1 texture bind); extraction backend in `src-tauri/src/cursor.rs` (no-op stubs elsewhere).
 - **Dev Console Debug Filter**: added `debug` level button to log filters in `src/components/Tabs/DevConsoleTab.tsx`.
 - **Full In-Window Shortcut Navigation**: added `Ctrl + /` (and `Ctrl + ?`) shortcut in `src/App.tsx` for immediate navigation to the About tab, and documented all 11 tab shortcuts in `src/components/Tabs/HotkeysTab.tsx`.
@@ -119,7 +208,7 @@
 
 ### Changed
 
-- **Renamed FXCursor** (was CursorFX Studio): crates `fxcursor-protocol` / `fxcursor-render` / `fxcursor-daemon`, binary `fxcursor`, product name `FXCursor`, identifier `com.nairodorian.fxcursor` — configurations from the earlier `com.fxcursor.app` and `com.cursorfx.studio` identifiers are adopted automatically on first launch. The repository was restructured so the app is the root; the V3 React app, the original Windhawk mods and the old build scripts moved to `legacy/`; CI, scripts and docs updated for the new layout. New home: `https://github.com/NairoDorian/FXCursor`.
+- **Renamed FXCursor** (was CursorFX Studio): crates `fxcursor-protocol` / `fxcursor-render` / `fxcursor-daemon`, binary `fxcursor`, product name `FXCursor`, identifier `com.nairodorian.fxcursor` — configurations from the earlier `com.fxcursor.app` and `com.cursorfx.studio` identifiers are adopted automatically on first launch. CI, scripts and docs updated for the new layout. New home: `https://github.com/NairoDorian/FXCursor`.
 
 - All Markdown documentation rewritten to describe the implemented architecture (single-process Tauri app, CPU physics, experimental daemon) instead of the V4 specification targets; `ARCHITECTURE.md` regenerated with accurate per-file descriptions.
 - `scripts/before-commit.ts` label corrected to the actual 7 gates.
@@ -196,7 +285,6 @@
 - `nvapi.rs` (merged into overlay/mod.rs)
 - `gui/mod.rs` and `gui/panel.rs` (egui-based)
 - Old `overlay/mod.rs` (winit-based window creation)
-- Legacy `project_cursor/Cargo.toml` (now in `src-tauri/`)
 
 ### Documentation
 
@@ -205,7 +293,6 @@
 - build_instructions.md: Added Bun + Tauri workflow
 - repomix-instruction.md: Updated for V3
 - repomix.config.json: Updated include/exclude patterns for new structure
-- dev_scripts: All paths updated to `project_cursor/src-tauri/`
 
 ### Known Issues
 

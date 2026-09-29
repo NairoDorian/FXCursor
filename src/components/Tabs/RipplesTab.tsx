@@ -3,6 +3,12 @@ import { SectionCard } from '../Common/SectionCard';
 import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
 import { ColorPicker } from '../Common/ColorPicker';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+
+const DEFAULTS = getDefaultConfig().ripple;
+const SHAPE_KEYS = ['max_diameter', 'duration_ms', 'start_width'] as const;
+const COLOR_KEYS = ['color_left', 'color_right', 'color_middle'] as const;
 
 interface RippleConfig {
   enabled: boolean;
@@ -29,6 +35,8 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
       <SectionCard
         title="Click Shockwave Ripples"
         desc="Expanding concentric SDF ring shockwaves triggered on mouse button clicks"
+        modified={isModified(props.ripple, DEFAULTS, SHAPE_KEYS)}
+        onReset={() => props.onChange(resetFields(props.ripple, DEFAULTS, SHAPE_KEYS))}
         headerRight={
           <Toggle ariaLabel="Enable click ripples" checked={props.ripple.enabled} onChange={(v) => update({ enabled: v })} />
         }
@@ -41,6 +49,7 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
           step={1}
           unit="px"
           value={props.ripple.max_diameter}
+          defaultValue={DEFAULTS.max_diameter}
           onChange={(v) => update({ max_diameter: v })}
         />
         <Slider
@@ -51,6 +60,7 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
           step={25}
           unit="ms"
           value={props.ripple.duration_ms}
+          defaultValue={DEFAULTS.duration_ms}
           onChange={(v) => update({ duration_ms: v })}
         />
         <Slider
@@ -61,6 +71,7 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
           step={0.5}
           unit="px"
           value={props.ripple.start_width}
+          defaultValue={DEFAULTS.start_width}
           onChange={(v) => update({ start_width: v })}
         />
       </SectionCard>
@@ -68,6 +79,8 @@ export const RipplesTab: Component<RipplesTabProps> = (props) => {
       <SectionCard
         title="Per-Button Shockwave Color Coding"
         desc="Distinct chromatic shockwaves mapped directly to Left, Right, and Middle mouse button clicks"
+        modified={isModified(props.ripple, DEFAULTS, COLOR_KEYS)}
+        onReset={() => props.onChange(resetFields(props.ripple, DEFAULTS, COLOR_KEYS))}
       >
         <ColorPicker
           label="Left Click Color"

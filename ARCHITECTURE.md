@@ -41,6 +41,7 @@ crates/
     src/
       config.rs
       lib.rs
+      migrate.rs
       presets.rs
       sanitize.rs
       self_healing.rs
@@ -65,6 +66,7 @@ crates/
     Cargo.toml
 docs/
   COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md
+  DO_NOT_LAUNCH_THE_APP.md
   V4_ARCHITECTURE_SPECIFICATION.md
 legacy/
   dev_scripts/
@@ -214,6 +216,7 @@ src/
     Common/
       ColorPicker.tsx
       ErrorBoundary.tsx
+      ResetParamButton.tsx
       SectionCard.tsx
       Slider.tsx
       Toast.tsx
@@ -240,6 +243,7 @@ src/
     effectMode.ts
     hardening.ts
     presets.ts
+    reset.ts
     tauri.ts
     theme.ts
     toast.ts
@@ -290,10 +294,12 @@ test/
   config-parity.test.ts
   effect-mode.test.ts
   presets.test.ts
+  reset.test.ts
   theme.test.ts
   trail-parity.test.ts
   version.test.ts
 .gitignore
+.gitmodules
 .oxlintrc.json
 .prettierignore
 .prettierrc
@@ -319,20 +325,21 @@ vite.config.ts
 
 ## 2. File Inventory & Descriptions
 
-Repomix metrics: **230 files · 2.4 MB · 638,523 tokens** (text files; binary assets are listed without content metrics).
+Repomix metrics: **236 files · 2.1 MB · 588,010 tokens** (text files; binary assets are listed without content metrics).
 
 | File Path | Size | Lines | Tokens | Chars | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `.cargo/config.toml` | 74 B | 5 | 19 | 73 | Source or configuration file for the application. |
 | `.github/workflows/ci.yml` | 3.1 KB | 101 | 843 | 3199 | Source or configuration file for the application. |
 | `.gitignore` | 593 B | 42 | 171 | 592 | Git ignore configuration excluding build artifacts, node_modules, logs, and lockfiles. |
+| `.gitmodules` | 117 B | 3 | 35 | 116 | Source or configuration file for the application. |
 | `.oxlintrc.json` | 748 B | 24 | 222 | 747 | oxlint (TS7-compatible linter) configuration for high-performance static analysis. |
 | `.prettierignore` | 142 B | 12 | 44 | 141 | Prettier ignore configuration excluding dist, target, node_modules, and logs. |
 | `.prettierrc` | 106 B | 7 | 41 | 105 | Prettier formatting configuration enforcing single quotes and 2-space indentation. |
-| `AGENTS.md` | 7.9 KB | 120 | 2006 | 8058 | Source or configuration file for the application. |
-| `Cargo.toml` | 603 B | 33 | 188 | 602 | Source or configuration file for the application. |
-| `CHANGELOG.md` | 25.8 KB | 214 | 6506 | 26388 | Source or configuration file for the application. |
-| `crates/fxcursor-daemon/Cargo.toml` | 1.7 KB | 69 | 542 | 1691 | Cargo manifest for standalone background daemon service. |
+| `AGENTS.md` | 12.4 KB | 195 | 3252 | 12683 | Source or configuration file for the application. |
+| `Cargo.toml` | 1.2 KB | 42 | 388 | 1202 | Source or configuration file for the application. |
+| `CHANGELOG.md` | 31.1 KB | 301 | 7883 | 31661 | Source or configuration file for the application. |
+| `crates/fxcursor-daemon/Cargo.toml` | 1.7 KB | 69 | 554 | 1771 | Cargo manifest for standalone background daemon service. |
 | `crates/fxcursor-daemon/src/gpu/mod.rs` | 3.8 KB | 114 | 803 | 3880 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/src/input/mod.rs` | 983 B | 42 | 242 | 982 | Source or configuration file for the application. |
 | `crates/fxcursor-daemon/src/input/windows.rs` | 1.6 KB | 54 | 424 | 1599 | Win32 GetCursorPos/GetAsyncKeyState poller (Raw Input not yet implemented). |
@@ -347,24 +354,26 @@ Repomix metrics: **230 files · 2.4 MB · 638,523 tokens** (text files; binary a
 | `crates/fxcursor-protocol/Cargo.toml` | 427 B | 15 | 131 | 426 | Cargo manifest for shared FXCursor IPC protocol and presets. |
 | `crates/fxcursor-protocol/examples/dump_default.rs` | 407 B | 9 | 93 | 406 | Prints AppConfig::default() as JSON; used by `bun run fixtures`. |
 | `crates/fxcursor-protocol/examples/dump_presets.rs` | 752 B | 17 | 182 | 751 | Source or configuration file for the application. |
-| `crates/fxcursor-protocol/src/config.rs` | 18.0 KB | 487 | 4621 | 18430 | Serializable Rust configuration structs for all visual modules. |
-| `crates/fxcursor-protocol/src/lib.rs` | 892 B | 31 | 204 | 891 | Protocol crate root re-exporting config, presets and self-healing. |
-| `crates/fxcursor-protocol/src/presets.rs` | 19.7 KB | 493 | 4499 | 20196 | Built-in Rust preset definitions and schema unit tests. |
-| `crates/fxcursor-protocol/src/sanitize.rs` | 10.4 KB | 369 | 2953 | 10654 | Source or configuration file for the application. |
+| `crates/fxcursor-protocol/src/config.rs` | 19.1 KB | 506 | 4866 | 19511 | Serializable Rust configuration structs for all visual modules. |
+| `crates/fxcursor-protocol/src/lib.rs` | 1.5 KB | 49 | 350 | 1518 | Protocol crate root re-exporting config, presets and self-healing. |
+| `crates/fxcursor-protocol/src/migrate.rs` | 8.2 KB | 214 | 2124 | 8370 | Source or configuration file for the application. |
+| `crates/fxcursor-protocol/src/presets.rs` | 20.0 KB | 498 | 4549 | 20462 | Built-in Rust preset definitions and schema unit tests. |
+| `crates/fxcursor-protocol/src/sanitize.rs` | 11.3 KB | 395 | 3180 | 11540 | Source or configuration file for the application. |
 | `crates/fxcursor-protocol/src/self_healing.rs` | 7.5 KB | 248 | 1671 | 7699 | Field-level self-healing JSON deserializer (serde_path_to_error) with repair log. |
 | `crates/fxcursor-protocol/tests/fixture_parity.rs` | 1.5 KB | 34 | 388 | 1585 | Rust side of the default-config parity check against test/fixtures. |
 | `crates/fxcursor-render/Cargo.toml` | 632 B | 19 | 166 | 631 | Cargo manifest for the shared wgpu renderer crate used by the Studio and the daemon. |
 | `crates/fxcursor-render/examples/dump_mode_masks.rs` | 1.3 KB | 40 | 345 | 1289 | Prints ModeMask::from_mode for every EffectMode as JSON; used by `bun run fixtures`. |
-| `crates/fxcursor-render/examples/dump_trail_trace.rs` | 2.9 KB | 75 | 848 | 3001 | Source or configuration file for the application. |
+| `crates/fxcursor-render/examples/dump_trail_trace.rs` | 3.0 KB | 75 | 852 | 3075 | Source or configuration file for the application. |
 | `crates/fxcursor-render/src/cursor.rs` | 11.0 KB | 281 | 3330 | 11303 | Source or configuration file for the application. |
-| `crates/fxcursor-render/src/lib.rs` | 1.4 KB | 29 | 355 | 1456 | Shared renderer crate root: re-exports OverlayRenderer, ModeMask and vertex types. |
-| `crates/fxcursor-render/src/renderer.rs` | 101.8 KB | 2586 | 27675 | 104178 | Shared renderer: CPU spring-chain physics, 4-layer ribbon mesh, SDF instances, effect-mode mask. |
+| `crates/fxcursor-render/src/lib.rs` | 1.5 KB | 29 | 365 | 1486 | Shared renderer crate root: re-exports OverlayRenderer, ModeMask and vertex types. |
+| `crates/fxcursor-render/src/renderer.rs` | 104.4 KB | 2585 | 27795 | 106862 | Shared renderer: CPU spring-chain physics, 4-layer ribbon mesh, SDF instances, effect-mode mask. |
 | `crates/fxcursor-render/src/shaders/physics.wgsl` | 2.8 KB | 101 | 739 | 2886 | Prototype compute shader (spring chain + particles). NOT dispatched yet; physics runs on CPU. |
 | `crates/fxcursor-render/src/shaders/render.wgsl` | 9.3 KB | 255 | 2670 | 9495 | Ribbon + SDF billboard vertex/fragment shader with fwidth anti-aliasing and pre-multiplied alpha. |
 | `crates/fxcursor-render/tests/gpu_smoke.rs` | 4.5 KB | 123 | 1154 | 4594 | Source or configuration file for the application. |
 | `crates/fxcursor-render/tests/mode_mask_fixture.rs` | 1.9 KB | 56 | 491 | 1908 | Rust side of the effect-mode parity check against test/fixtures/mode_masks.json. |
 | `crates/fxcursor-render/tests/preset_modes.rs` | 1.2 KB | 25 | 301 | 1244 | Source or configuration file for the application. |
 | `docs/COMPARATIVE_RESEARCH_AND_BRAINSTORMING.md` | 18.7 KB | 257 | 4646 | 18344 | Source or configuration file for the application. |
+| `docs/DO_NOT_LAUNCH_THE_APP.md` | 5.3 KB | 108 | 1372 | 5386 | Source or configuration file for the application. |
 | `docs/V4_ARCHITECTURE_SPECIFICATION.md` | 25.7 KB | 318 | 5573 | 23603 | Source or configuration file for the application. |
 | `DOCUMENTATION.md` | 1.6 KB | 32 | 390 | 1661 | Master upstream documentation map for Tauri 2, SolidJS 2, Bun, TypeScript 7, and wgpu. |
 | `HANDOVER_TRAIL_REWRITE.md` | 29.8 KB | 588 | 8902 | 30250 | Source or configuration file for the application. |
@@ -464,32 +473,32 @@ Repomix metrics: **230 files · 2.4 MB · 638,523 tokens** (text files; binary a
 | `legacy/TD_Web_Trail/TD-Socket-Server-V4/package.json` | 134 B | 8 | 48 | 134 | Source or configuration file for the application. |
 | `legacy/TD_Web_Trail/TD-Socket-Server-V4/README.md` | 3.0 KB | 90 | 737 | 3079 | Source or configuration file for the application. |
 | `legacy/TD_Web_Trail/trail-system.js` | 41.5 KB | 1311 | 11206 | 42419 | Source or configuration file for the application. |
-| `memory.md` | 9.2 KB | 111 | 2109 | 9343 | Source or configuration file for the application. |
-| `package.json` | 1.8 KB | 45 | 610 | 1824 | Project manifest containing Bun scripts, SolidJS 2.0, and Tauri 2 dependencies. |
-| `PROGRESS.md` | 48.1 KB | 326 | 10977 | 49005 | Source or configuration file for the application. |
+| `memory.md` | 9.5 KB | 117 | 2206 | 9734 | Source or configuration file for the application. |
+| `package.json` | 1.8 KB | 45 | 616 | 1838 | Project manifest containing Bun scripts, SolidJS 2.0, and Tauri 2 dependencies. |
+| `PROGRESS.md` | 49.6 KB | 335 | 11305 | 50610 | Source or configuration file for the application. |
 | `public/overlay.html` | 265 B | 17 | 73 | 264 | Source or configuration file for the application. |
-| `README.md` | 13.6 KB | 182 | 3396 | 13647 | Source or configuration file for the application. |
-| `repo-summary.md` | 2.7 KB | 17 | 533 | 2725 | Source or configuration file for the application. |
-| `repomix-instruction.md` | 4.0 KB | 39 | 1086 | 4120 | Source or configuration file for the application. |
+| `README.md` | 14.3 KB | 192 | 3593 | 14400 | Source or configuration file for the application. |
+| `repo-summary.md` | 2.7 KB | 22 | 552 | 2789 | Source or configuration file for the application. |
+| `repomix-instruction.md` | 4.5 KB | 45 | 1225 | 4592 | Source or configuration file for the application. |
 | `repomix.config.json` | 752 B | 34 | 209 | 751 | Repomix configuration for metadata-only architecture output. |
 | `scripts/before-commit.ts` | 7.3 KB | 215 | 2050 | 7432 | 7-gate validation suite and multi-manifest version synchronizer. |
 | `scripts/create-icons.ts` | 680 B | 26 | 195 | 671 | Cross-platform application icon validator and generator. |
 | `scripts/generate-arch.ts` | 15.5 KB | 274 | 3928 | 15883 | Repomix pack() API-driven generator producing ARCHITECTURE.md. |
 | `scripts/package-portable.ts` | 3.7 KB | 94 | 1004 | 3766 | Builds the portable zip (exe + `portable` marker + Data/ + README) from the release build. |
-| `scripts/snapshots/contact_sheet.ps1` | 1.5 KB | 25 | 573 | 1583 | Source or configuration file for the application. |
-| `scripts/snapshots/snapshot_motion.ps1` | 3.0 KB | 67 | 1010 | 3044 | Source or configuration file for the application. |
-| `scripts/snapshots/snapshot_trail.ps1` | 3.6 KB | 95 | 1386 | 3736 | Source or configuration file for the application. |
-| `scripts/snapshots/zoom_sheet.ps1` | 1.7 KB | 25 | 620 | 1719 | Source or configuration file for the application. |
+| `scripts/snapshots/contact_sheet.ps1` | 2.6 KB | 45 | 800 | 2672 | Source or configuration file for the application. |
+| `scripts/snapshots/snapshot_motion.ps1` | 4.0 KB | 87 | 1237 | 4133 | Source or configuration file for the application. |
+| `scripts/snapshots/snapshot_trail.ps1` | 4.7 KB | 115 | 1613 | 4825 | Source or configuration file for the application. |
+| `scripts/snapshots/zoom_sheet.ps1` | 2.7 KB | 45 | 847 | 2808 | Source or configuration file for the application. |
 | `scripts/sync-docs.ts` | 3.5 KB | 119 | 958 | 3526 | Documentation mirror manager managing shallow git mirrors under .docs/. |
-| `scripts/update-deps.ts` | 19.4 KB | 535 | 5222 | 19772 | End-to-end automated dual-ecosystem pre-release upgrade pipeline. |
+| `scripts/update-deps.ts` | 21.0 KB | 561 | 5659 | 21411 | End-to-end automated dual-ecosystem pre-release upgrade pipeline. |
 | `scripts/version.ts` | 169 B | 5 | 40 | 168 | Single global source of truth for the application version (APP_VERSION). |
 | `src-tauri/build.rs` | 40 B | 3 | 12 | 39 | Source or configuration file for the application. |
-| `src-tauri/capabilities/default.json` | 505 B | 17 | 135 | 504 | Tauri 2 ACL capability granting core/event/window permissions to main and overlay windows. |
-| `src-tauri/Cargo.toml` | 1.6 KB | 56 | 546 | 1678 | Cargo manifest for the Tauri 2 desktop shell and overlay renderer. |
-| `src-tauri/gen/schemas/acl-manifests.json` | 73.3 KB | 1 | 15955 | 75084 | Source or configuration file for the application. |
-| `src-tauri/gen/schemas/capabilities.json` | 412 B | 1 | 96 | 412 | Source or configuration file for the application. |
-| `src-tauri/gen/schemas/desktop-schema.json` | 136.3 KB | 2720 | 29491 | 139525 | Source or configuration file for the application. |
-| `src-tauri/gen/schemas/windows-schema.json` | 136.3 KB | 2720 | 29491 | 139525 | Source or configuration file for the application. |
+| `src-tauri/capabilities/default.json` | 481 B | 16 | 128 | 480 | Tauri 2 ACL capability granting core/event/window permissions to main and overlay windows. |
+| `src-tauri/Cargo.toml` | 2.0 KB | 57 | 637 | 2044 | Cargo manifest for the Tauri 2 desktop shell and overlay renderer. |
+| `src-tauri/gen/schemas/acl-manifests.json` | 11.4 KB | 1 | 2588 | 11702 | Source or configuration file for the application. |
+| `src-tauri/gen/schemas/capabilities.json` | 393 B | 1 | 91 | 393 | Source or configuration file for the application. |
+| `src-tauri/gen/schemas/desktop-schema.json` | 9.9 KB | 260 | 2312 | 10095 | Source or configuration file for the application. |
+| `src-tauri/gen/schemas/windows-schema.json` | 9.9 KB | 260 | 2312 | 10095 | Source or configuration file for the application. |
 | `src-tauri/icons/32x32.png` | 404 B | — | — | — | Source or configuration file for the application. |
 | `src-tauri/icons/icon.ico` | 4.2 KB | — | — | — | Source or configuration file for the application. |
 | `src-tauri/icons/icon.png` | 4.2 KB | — | — | — | Source or configuration file for the application. |
@@ -498,57 +507,60 @@ Repomix metrics: **230 files · 2.4 MB · 638,523 tokens** (text files; binary a
 | `src-tauri/src/display.rs` | 5.6 KB | 164 | 1527 | 5741 | Source or configuration file for the application. |
 | `src-tauri/src/input/mod.rs` | 6.6 KB | 221 | 1739 | 6714 | InputHub: event-driven cursor/button/click source with condvar wake for the render thread. |
 | `src-tauri/src/input/windows.rs` | 4.7 KB | 100 | 1203 | 4846 | WH_MOUSE_LL low-level mouse hook thread + GetCursorPos UIPI fallback poll. |
-| `src-tauri/src/integrations.rs` | 4.0 KB | 108 | 992 | 4115 | OS integrations synced from config: global toggle hotkey and login autostart. |
-| `src-tauri/src/lib.rs` | 29.7 KB | 782 | 7137 | 30411 | Tauri entry: persisted config state, IPC commands, tray, hotkey/autostart sync, overlay thread. |
+| `src-tauri/src/integrations.rs` | 4.0 KB | 108 | 992 | 4114 | OS integrations synced from config: global toggle hotkey and login autostart. |
+| `src-tauri/src/lib.rs` | 29.8 KB | 783 | 7152 | 30470 | Tauri entry: persisted config state, IPC commands, tray, hotkey/autostart sync, overlay thread. |
 | `src-tauri/src/logger.rs` | 3.0 KB | 102 | 746 | 3055 | Log bridge: env_logger + ring buffer + `rust-log` event stream to the Dev Console. |
 | `src-tauri/src/main.rs` | 107 B | 5 | 30 | 106 | Main Rust entry point launching the desktop application. |
-| `src-tauri/src/overlay/mod.rs` | 32.7 KB | 720 | 7136 | 33479 | Multi-monitor virtual desktop bounds query and overlay window setup. |
+| `src-tauri/src/overlay/mod.rs` | 32.7 KB | 720 | 7123 | 33448 | Multi-monitor virtual desktop bounds query and overlay window setup. |
 | `src-tauri/src/panic_log.rs` | 2.9 KB | 92 | 725 | 2965 | Panic hook logger saving crash dumps to panic.log. |
 | `src-tauri/src/portable.rs` | 1.5 KB | 58 | 383 | 1551 | Zero-config portable mode detector for USB/isolated directory runs. |
-| `src-tauri/src/settings_repair.rs` | 10.7 KB | 273 | 2571 | 10959 | Persistent config store: self-healing load, atomic save, debounced auto-saver. |
+| `src-tauri/src/settings_repair.rs` | 11.8 KB | 300 | 2876 | 12097 | Persistent config store: self-healing load, atomic save, debounced auto-saver. |
 | `src-tauri/src/tracker.rs` | 2.4 KB | 79 | 719 | 2444 | device_query mouse poller used on non-Windows platforms (Windows uses input/windows.rs). |
-| `src-tauri/src/user_presets.rs` | 6.9 KB | 189 | 1721 | 7084 | Source or configuration file for the application. |
+| `src-tauri/src/user_presets.rs` | 8.6 KB | 223 | 2126 | 8757 | Source or configuration file for the application. |
 | `src-tauri/tauri.conf.json` | 1.8 KB | 51 | 525 | 1889 | Tauri 2 configuration defining window dimensions and capabilities. |
-| `src/App.tsx` | 20.3 KB | 622 | 5128 | 20779 | Application shell: modular tab navigation, header, live ribbon preview, and toast container. |
+| `src/App.tsx` | 22.3 KB | 681 | 5576 | 22817 | Application shell: modular tab navigation, header, live ribbon preview, and toast container. |
 | `src/components/Common/ColorPicker.tsx` | 2.6 KB | 74 | 774 | 2684 | RGBA / Hex color picker with alpha slider. |
 | `src/components/Common/ErrorBoundary.tsx` | 2.2 KB | 69 | 519 | 2272 | Top-level SolidJS 2 crash handler with stack trace display. |
-| `src/components/Common/SectionCard.tsx` | 663 B | 27 | 156 | 662 | Glassmorphic card container with header action slots. |
-| `src/components/Common/Slider.tsx` | 2.3 KB | 77 | 628 | 2335 | Precision custom range slider with dynamic step calculation. |
+| `src/components/Common/ResetParamButton.tsx` | 1.7 KB | 48 | 448 | 1741 | Source or configuration file for the application. |
+| `src/components/Common/SectionCard.tsx` | 1.5 KB | 49 | 338 | 1554 | Glassmorphic card container with header action slots. |
+| `src/components/Common/Slider.tsx` | 3.0 KB | 94 | 774 | 3019 | Precision custom range slider with dynamic step calculation. |
 | `src/components/Common/Toast.tsx` | 2.5 KB | 77 | 646 | 2511 | Floating animated toast notification container. |
 | `src/components/Common/Toggle.tsx` | 862 B | 32 | 213 | 861 | Accessible switch toggle control. |
-| `src/components/Preview/LivePreview.tsx` | 17.2 KB | 475 | 5005 | 17615 | Canvas mirror of the renderer: same physics, capsule-union ribbon (erase-then-paint), clicks, modes. |
+| `src/components/Preview/LivePreview.tsx` | 17.7 KB | 475 | 5015 | 18089 | Canvas mirror of the renderer: same physics, capsule-union ribbon (erase-then-paint), clicks, modes. |
 | `src/components/Tabs/AboutTab.tsx` | 5.3 KB | 124 | 1382 | 5424 | Architecture overview and diagnostic details. |
 | `src/components/Tabs/DevConsoleTab.tsx` | 5.3 KB | 164 | 1258 | 5407 | Live diagnostic dev-console log viewer with filter badges. |
 | `src/components/Tabs/DeveloperTab.tsx` | 17.7 KB | 472 | 4351 | 18042 | Developer Hub: IPC latency benchmark, system diagnostics, config path, theme accents. |
-| `src/components/Tabs/HeadTab.tsx` | 6.5 KB | 196 | 1527 | 6659 | Squishy head SDF controls with velocity elongation and angle normalization. |
-| `src/components/Tabs/HotkeysTab.tsx` | 8.1 KB | 211 | 1984 | 8284 | Global hotkey bindings and autostart preferences. |
-| `src/components/Tabs/LayersTab.tsx` | 9.4 KB | 295 | 2432 | 9657 | 4-layer master controls (Outer Glow, Mid Shadow, Crisp Core, Inner Spine). |
-| `src/components/Tabs/ParticlesTab.tsx` | 3.2 KB | 104 | 787 | 3229 | Kinematic particle bursts with gravity, drag friction, and alpha decay. |
+| `src/components/Tabs/HeadTab.tsx` | 7.8 KB | 219 | 1815 | 8028 | Squishy head SDF controls with velocity elongation and angle normalization. |
+| `src/components/Tabs/HotkeysTab.tsx` | 9.5 KB | 231 | 2293 | 9672 | Global hotkey bindings and autostart preferences. |
+| `src/components/Tabs/LayersTab.tsx` | 11.2 KB | 329 | 2917 | 11440 | 4-layer master controls (Outer Glow, Mid Shadow, Crisp Core, Inner Spine). |
+| `src/components/Tabs/ParticlesTab.tsx` | 4.0 KB | 124 | 970 | 4068 | Kinematic particle bursts with gravity, drag friction, and alpha decay. |
 | `src/components/Tabs/PresetsTab.tsx` | 7.7 KB | 196 | 1846 | 7928 | Preset selector cards and JSON configuration import/export. |
-| `src/components/Tabs/RipplesTab.tsx` | 2.9 KB | 93 | 705 | 2970 | Click shockwave concentric ring controls with per-button coloring. |
-| `src/components/Tabs/SatellitesTab.tsx` | 4.0 KB | 131 | 989 | 4141 | Celestial satellite orbitals with counter-rotation dual ring support. |
-| `src/components/Tabs/TrailTab.tsx` | 8.5 KB | 244 | 2021 | 8748 | Kinematic physics sliders with independent head and body tension/damping. |
-| `src/index.css` | 5.7 KB | 300 | 1940 | 5865 | Source or configuration file for the application. |
-| `src/lib/bindings.ts` | 19.3 KB | 381 | 5243 | 19737 | AUTO-GENERATED by tauri-specta: typed `commands` and config types. Do not edit. |
+| `src/components/Tabs/RipplesTab.tsx` | 3.7 KB | 106 | 894 | 3831 | Click shockwave concentric ring controls with per-button coloring. |
+| `src/components/Tabs/SatellitesTab.tsx` | 4.9 KB | 151 | 1180 | 4985 | Celestial satellite orbitals with counter-rotation dual ring support. |
+| `src/components/Tabs/TrailTab.tsx` | 10.7 KB | 299 | 2526 | 10960 | Kinematic physics sliders with independent head and body tension/damping. |
+| `src/index.css` | 8.0 KB | 407 | 2598 | 8180 | Source or configuration file for the application. |
+| `src/lib/bindings.ts` | 22.7 KB | 569 | 5889 | 23156 | AUTO-GENERATED by tauri-specta: typed `commands` and config types. Do not edit. |
 | `src/lib/console.ts` | 3.8 KB | 115 | 897 | 3843 | In-memory dev-log event bus shared with DevConsole. |
 | `src/lib/effectMode.ts` | 2.2 KB | 60 | 590 | 2286 | TypeScript mirror of the renderer ModeMask plus the header effect-mode list. |
-| `src/lib/generated/builtin_presets.json` | 26.8 KB | 1220 | 8133 | 27423 | Source or configuration file for the application. |
+| `src/lib/generated/builtin_presets.json` | 27.2 KB | 1232 | 8247 | 27841 | Source or configuration file for the application. |
 | `src/lib/hardening.ts` | 814 B | 19 | 180 | 813 | Source or configuration file for the application. |
-| `src/lib/presets.ts` | 4.8 KB | 179 | 1533 | 4895 | Frontend presets registry, default configuration factory, and type definitions. |
+| `src/lib/presets.ts` | 5.0 KB | 183 | 1582 | 5113 | Frontend presets registry, default configuration factory, and type definitions. |
+| `src/lib/reset.ts` | 5.6 KB | 152 | 1371 | 5711 | Source or configuration file for the application. |
 | `src/lib/tauri.ts` | 152 B | 4 | 37 | 151 | Shared Tauri v2 runtime detection utility exporting isTauri. |
 | `src/lib/theme.ts` | 1.3 KB | 53 | 454 | 1299 | Theme accent customization engine with 5 curated neon color palettes. |
 | `src/lib/toast.ts` | 1.5 KB | 64 | 414 | 1554 | Reactive toast notification event bus and helper methods. |
-| `src/lib/trail.ts` | 13.1 KB | 356 | 4470 | 13344 | Source or configuration file for the application. |
+| `src/lib/trail.ts` | 13.5 KB | 358 | 4488 | 13813 | Source or configuration file for the application. |
 | `src/main.tsx` | 438 B | 15 | 105 | 435 | SolidJS 2 application entry point rendering the root component. |
 | `src/vite-env.d.ts` | 38 B | 1 | 9 | 37 | Source or configuration file for the application. |
 | `test/config-parity.test.ts` | 1.3 KB | 38 | 325 | 1323 | Asserts the TypeScript default config equals the Rust-generated fixture. |
 | `test/effect-mode.test.ts` | 1.5 KB | 39 | 400 | 1573 | Asserts the TypeScript modeMask() equals the Rust-generated mode_masks.json fixture. |
-| `test/fixtures/default_config.json` | 3.5 KB | 198 | 1302 | 3583 | Rust AppConfig::default() snapshot (bun run fixtures) shared by Rust and Bun parity tests. |
+| `test/fixtures/default_config.json` | 3.6 KB | 200 | 1321 | 3642 | Rust AppConfig::default() snapshot (bun run fixtures) shared by Rust and Bun parity tests. |
 | `test/fixtures/mode_masks.json` | 1004 B | 67 | 303 | 1003 | ModeMask::from_mode snapshot for every EffectMode (bun run fixtures); shared parity fixture. |
 | `test/fixtures/trail_trace.json` | 79.4 KB | 1 | 42619 | 81298 | Source or configuration file for the application. |
-| `test/presets.test.ts` | 2.3 KB | 62 | 672 | 2374 | Source or configuration file for the application. |
+| `test/presets.test.ts` | 2.3 KB | 62 | 665 | 2347 | Source or configuration file for the application. |
+| `test/reset.test.ts` | 3.3 KB | 93 | 863 | 3402 | Source or configuration file for the application. |
 | `test/theme.test.ts` | 789 B | 22 | 208 | 788 | Source or configuration file for the application. |
-| `test/trail-parity.test.ts` | 4.7 KB | 118 | 1329 | 4849 | Source or configuration file for the application. |
+| `test/trail-parity.test.ts` | 4.9 KB | 118 | 1336 | 4966 | Source or configuration file for the application. |
 | `test/version.test.ts` | 512 B | 14 | 134 | 511 | Source or configuration file for the application. |
 | `tsconfig.json` | 576 B | 22 | 170 | 575 | TypeScript root configuration with strict type checking and bundler resolution. |
 | `tsconfig.node.json` | 196 B | 8 | 57 | 195 | Source or configuration file for the application. |

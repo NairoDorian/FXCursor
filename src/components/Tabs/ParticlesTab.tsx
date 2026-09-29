@@ -3,6 +3,18 @@ import { SectionCard } from '../Common/SectionCard';
 import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
 import { ColorPicker } from '../Common/ColorPicker';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+
+const DEFAULTS = getDefaultConfig().particles;
+const PHYSICS_KEYS = [
+  'count_per_click',
+  'size',
+  'base_speed',
+  'gravity',
+  'friction',
+  'duration_ms',
+] as const;
 
 interface ParticleConfig {
   enabled: boolean;
@@ -30,6 +42,8 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
       <SectionCard
         title="Kinematic Particle Bursts"
         desc="Physics-driven particles with gravity vector, air resistance, and alpha decay"
+        modified={isModified(props.particles, DEFAULTS, PHYSICS_KEYS)}
+        onReset={() => props.onChange(resetFields(props.particles, DEFAULTS, PHYSICS_KEYS))}
         headerRight={
           <Toggle ariaLabel="Enable click particles" checked={props.particles.enabled} onChange={(v) => update({ enabled: v })} />
         }
@@ -47,6 +61,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           max={100}
           step={1}
           value={props.particles.count_per_click}
+          defaultValue={DEFAULTS.count_per_click}
           onChange={(v) => update({ count_per_click: v })}
         />
         <Slider
@@ -57,6 +72,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           step={0.5}
           unit="px"
           value={props.particles.size}
+          defaultValue={DEFAULTS.size}
           onChange={(v) => update({ size: v })}
         />
         <Slider
@@ -67,6 +83,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           step={25}
           unit="px/s"
           value={props.particles.base_speed}
+          defaultValue={DEFAULTS.base_speed}
           onChange={(v) => update({ base_speed: v })}
         />
         <Slider
@@ -77,6 +94,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           step={20}
           unit="px/s²"
           value={props.particles.gravity}
+          defaultValue={DEFAULTS.gravity}
           onChange={(v) => update({ gravity: v })}
         />
         <Slider
@@ -86,6 +104,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           max={0.99}
           step={0.01}
           value={props.particles.friction}
+          defaultValue={DEFAULTS.friction}
           onChange={(v) => update({ friction: v })}
         />
         <Slider
@@ -96,6 +115,7 @@ export const ParticlesTab: Component<ParticlesTabProps> = (props) => {
           step={25}
           unit="ms"
           value={props.particles.duration_ms}
+          defaultValue={DEFAULTS.duration_ms}
           onChange={(v) => update({ duration_ms: v })}
         />
       </SectionCard>

@@ -25,5 +25,5 @@ pub use cursor::{
 };
 pub use renderer::{
     build_layer_capsules, build_samples, CapsuleInstance, CircleInstance, ModeMask,
-    OverlayRenderer, Sample, TrailChain, DEPTH_FORMAT,
+    OverlayRenderer, Sample, TrailChain, Viewport, DEPTH_FORMAT, UNBOUNDED_VIEWPORT,
 };

@@ -52,31 +52,36 @@ impl Default for LayerConfig {
 }
 
 /// Physics, geometry, and layer parameters governing the cursor ribbon trail.
+///
+/// Every field is stored in the unit it is displayed in: springs are plain fractions
+/// (`0.05` = 5% of the gap per reference frame) and frictions are plain retention factors
+/// (`0.7` = keep 70% of the velocity). Nothing is divided by 1000 or expressed in percent
+/// behind your back, so a value in the JSON is the value on the slider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct TrailConfig {
     /// Master toggle for ribbon trail physics and rendering.
     pub enabled: bool,
-    /// Number of simulated discrete nodes in the spring chain (4–150). Width, fade and blur
+    /// Number of simulated discrete nodes in the spring chain (4–500). Width, fade and blur
     /// are parameterised by node index, so this is also the length of the visible taper.
     pub length: u32,
-    /// Spring constant for the trailing body nodes, Windhawk scale: `k = spring / 1000` per
-    /// 1/120 s reference frame (1–500).
+    /// Spring constant for the trailing body nodes, used directly: each reference frame adds
+    /// `gap × spring` to the node's velocity (0.0–1.0). 0 = no pull, 1 = snaps shut.
     pub spring: f32,
-    /// Velocity friction percent for the body nodes (0–99): each reference frame keeps
-    /// `1 − damping/100` of the velocity.
+    /// Fraction of velocity the body nodes keep per reference frame (0.0–1.0): 1.0 = frictionless
+    /// (rings forever), 0.0 = every node stops dead each frame.
     pub damping: f32,
-    /// Spring stiffness constant for the leading head node (same scale as `spring`: /1000).
+    /// Spring constant for the leading head node, same units and range as `spring`.
     pub head_spring: f32,
-    /// Velocity friction percent for the leading head node (0–99; higher = more damping).
+    /// Fraction of velocity the head keeps per reference frame, same units as `damping`.
     pub head_damping: f32,
-    /// LazyBrush: engage the TD-style dead-zone pointer smoother.
+    /// LazyBrush: engage the dead-zone pointer smoother.
     #[serde(default)]
     pub lazy_enabled: bool,
     /// Dead-zone radius in px the pointer must exceed before the brush starts moving.
     #[serde(default = "default_lazy_radius")]
     pub lazy_radius: f32,
     /// Brush friction 0–0.99: fraction of the excess distance NOT applied per frame
-    /// (0 = snap to pointer, →1 = frozen). TD formula: factor = 1 - sqrt(1-(1-f)^2).
+    /// (0 = snap to pointer, →1 = frozen). Factor: `1 - sqrt(1-(1-f)^2)`.
     #[serde(default = "default_lazy_friction")]
     pub lazy_friction: f32,
     /// Reference ribbon width in physical pixels at the head; each layer scales it by its
@@ -84,11 +89,12 @@ pub struct TrailConfig {
     pub cursor_size: f32,
     /// Minimum clamping width in physical pixels at the tail of the trail.
     pub min_width: f32,
-    /// Extra width at full speed: `width × (1 + mult × min(speed / 20, 1))`, speed in px per
-    /// 1/120 s (saturates at 2400 px/s, as in Windhawk).
+    /// Extra width at full speed: `width × (1 + mult × min(speed / velocity_reference_speed, 1))`.
     pub velocity_width_mult: f32,
     /// Extra opacity at full speed, same normalisation as `velocity_width_mult`.
     pub velocity_alpha_mult: f32,
+    /// Speed (px per 1/120 s reference frame) at which the velocity boosts above reach 100%.
+    pub velocity_reference_speed: f32,
     /// Fixed Catmull-Rom sub-samples per node segment. Only used when `adaptive_quality` is
     /// off; the adaptive path picks its own count from the local curvature.
     pub interpolation_steps: u32,
@@ -112,15 +118,22 @@ fn default_lazy_friction() -> f32 {
     0.4
 }
 
+fn default_schema_version() -> u32 {
+    crate::migrate::CURRENT_SCHEMA_VERSION
+}
+
 impl Default for TrailConfig {
     fn default() -> Self {
         Self {
             enabled: true,
             length: 80,
-            spring: 50.0,
-            damping: 30.0,
-            head_spring: 50.0,
-            head_damping: 30.0,
+            // Natural units: `spring` is added straight to the velocity each reference frame,
+            // `damping` is the fraction of velocity kept. These reproduce a long, smooth,
+            // slightly-lagging tail that settles without oscillating.
+            spring: 0.05,
+            damping: 0.7,
+            head_spring: 0.05,
+            head_damping: 0.7,
             lazy_enabled: false,
             lazy_radius: 30.0,
             lazy_friction: 0.4,
@@ -128,6 +141,7 @@ impl Default for TrailConfig {
             min_width: 2.0,
             velocity_width_mult: 0.5,
             velocity_alpha_mult: 0.1,
+            velocity_reference_speed: 20.0,
             interpolation_steps: 2,
             fade_mode: 3, // 0=Linear, 1=EaseOut, 2=Exponential, 3=Sigmoid
             enable_gradient: true,
@@ -185,11 +199,11 @@ pub struct HeadConfig {
     pub enabled: bool,
     /// Resting diameter in physical pixels.
     pub size: f32,
-    /// Elongation along the direction of motion, in percent per unit of eased speed (Windhawk
-    /// `squishIntensity`: `scale = min(v × 8, 200) / 15 × intensity / 100`).
+    /// Elongation along the direction of motion (0.0–1.0). Applied as
+    /// `scale = min(v × 8, 200) / 15 × intensity`.
     pub squish_intensity: f32,
-    /// Percent of the remaining gap the head (position, squish and angle) closes per 1/120 s
-    /// (1–100; 100 = locked to the pointer).
+    /// Fraction of the remaining gap the head (position, squish and angle) closes per 1/120 s
+    /// (0.0–1.0; 1.0 = locked to the pointer).
     pub squish_smoothing: f32,
     /// RGBA color of the cursor head (straight alpha, 0.0–1.0).
     pub color: [f32; 4],
@@ -202,12 +216,12 @@ pub struct HeadConfig {
 impl Default for HeadConfig {
     fn default() -> Self {
         Self {
-            // Trail-only default (mirrors V3): the ribbon is the product; the squishy
+            // Trail-only default: the ribbon is the product; the squishy
             // head blob is opt-in from the Studio.
             enabled: false,
             size: 18.0,
-            squish_intensity: 3.0,
-            squish_smoothing: 50.0,
+            squish_intensity: 0.03,
+            squish_smoothing: 0.5,
             color: [1.0, 1.0, 1.0, 1.0],
             filled: true,
             thickness: -1.0, // <0 filled
@@ -441,6 +455,10 @@ impl Default for GeneralConfig {
 /// Root configuration tree for FXCursor, persisted to `config.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct AppConfig {
+    /// Version of the parameter units this file was written with. Read by
+    /// [`crate::migrate`] to convert older documents; do not edit by hand.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     /// Master toggle for all overlay cursor effects.
     pub enabled: bool,
     /// Active effect mode gating visual components.
@@ -469,6 +487,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            schema_version: default_schema_version(),
             enabled: true,
             // Trail-only out of the box: the mode mask plus the per-effect `enabled`
             // flags below keep ripples / particles / satellites / head off until chosen.

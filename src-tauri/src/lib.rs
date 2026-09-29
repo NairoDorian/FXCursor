@@ -530,7 +530,7 @@ pub fn run() {
     let config: SharedConfig = Arc::new(Mutex::new(AppConfig::default()));
     let start_hidden_flag = std::env::args().any(|a| a == "--minimized");
 
-    let specta_builder = tauri_specta::Builder::<tauri::Wry>::new()
+    let specta_builder = tauri_specta::Builder::<tauri::DynRuntime>::new()
         .error_handling(ErrorHandlingMode::Throw)
         // `AppConfig::sanitize` replaces NaN/∞ before any config is stored, so export f32 as a
         // plain `number` instead of `number | null`.
@@ -566,6 +566,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // `fxcursor --capture out.png [--capture-size WxH]` from a second process
             // asks the running instance for an overlay snapshot instead of showing the window.

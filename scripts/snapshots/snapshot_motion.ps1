@@ -1,3 +1,23 @@
+<#
+  ================================================================================
+  DO NOT RUN THIS SCRIPT FROM AN AUTOMATED AGENT.
+  ================================================================================
+  This script starts a NEW `fxcursor.exe --capture ...` process and relies on the
+  single-instance plugin to forward the request to an already-running instance.
+
+  If FXCursor is NOT already running, that process becomes a PRIMARY instance: it
+  ignores the capture arguments and starts the app normally. And a debug build has
+  NO FRONT END BUNDLED IN -- it loads from "devUrl": "http://localhost:1420", which
+  only `bun run tauri dev` starts. So the webview renders an error page and the
+  overlay is drawn OPAQUE instead of transparent: a stuck non-transparent window
+  across the whole desktop. That has twice happened and the user had to REBOOT
+  WINDOWS to recover. A broken overlay is a broken desktop.
+
+  Running this script IS launching the app. Only the user runs it, deliberately,
+  with the app already open.
+
+  Full rule: docs/DO_NOT_LAUNCH_THE_APP.md
+#>
 param(
   [string]$OutPath = (Join-Path $PSScriptRoot "..\..\target\snapshots\trail_motion.png"),
   [string]$Exe = (Join-Path $PSScriptRoot "..\..\target\debug\fxcursor.exe"),

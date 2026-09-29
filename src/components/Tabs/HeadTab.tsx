@@ -4,6 +4,20 @@ import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
 import { ColorPicker } from '../Common/ColorPicker';
 import type { GpuCursorConfig } from '../../lib/bindings';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+
+const DEFAULTS = getDefaultConfig();
+const HEAD_DEFAULTS = DEFAULTS.head;
+const GPU_DEFAULTS = DEFAULTS.gpu_cursor as GpuCursorConfig;
+const HEAD_KEYS = ['size', 'squish_intensity', 'squish_smoothing', 'thickness'] as const;
+const GPU_KEYS = [
+  'hide_system_cursor',
+  'rotate_with_movement',
+  'rotation_smoothing',
+  'click_scale_percent',
+  'click_scale_duration_ms',
+] as const;
 
 interface HeadConfig {
   enabled: boolean;
@@ -36,6 +50,8 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
       <SectionCard
         title="Squishy Cursor Head (Organic SDF)"
         desc="Analytical Signed Distance Field ellipse with velocity-directed deformation and angular normalization"
+        modified={isModified(props.head, HEAD_DEFAULTS, HEAD_KEYS)}
+        onReset={() => props.onChange(resetFields(props.head, HEAD_DEFAULTS, HEAD_KEYS))}
         headerRight={
           <Toggle ariaLabel="Enable squishy head" checked={props.head.enabled} onChange={(v) => update({ enabled: v })} />
         }
@@ -54,25 +70,27 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
           step={1}
           unit="px"
           value={props.head.size}
+          defaultValue={HEAD_DEFAULTS.size}
           onChange={(v) => update({ size: v })}
         />
         <Slider
           label="Squish Intensity (Velocity Stretch)"
-          sub="Elongation deformation strength along velocity vector (0.0x - 10.0x)"
+          sub="Elongation deformation strength along the velocity vector (0 = rigid, 1 = extreme)"
           min={0}
-          max={10.0}
-          step={0.1}
-          unit="x"
+          max={1}
+          step={0.005}
           value={props.head.squish_intensity}
+          defaultValue={HEAD_DEFAULTS.squish_intensity}
           onChange={(v) => update({ squish_intensity: v })}
         />
         <Slider
           label="Squish Smoothing"
-          sub="How fast the blob eases toward the pointer and back to a circle, per 1/120 s (1 = floaty, 100 = instant)"
-          min={1}
-          max={100}
-          step={1}
+          sub="Fraction of the remaining gap the blob closes per 1/120 s (0 = frozen, 1 = locked to the pointer)"
+          min={0}
+          max={1}
+          step={0.005}
           value={props.head.squish_smoothing}
+          defaultValue={HEAD_DEFAULTS.squish_smoothing}
           onChange={(v) => update({ squish_smoothing: v })}
         />
 
@@ -115,6 +133,8 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
       <SectionCard
         title="GPU Cursor Bypass"
         desc="Extracts the active system cursor shape and redraws it on the overlay with movement rotation and a click bounce; can hide the real cursor while active"
+        modified={isModified(props.gpuCursor, GPU_DEFAULTS, GPU_KEYS)}
+        onReset={() => props.onGpuCursorChange(resetFields(props.gpuCursor, GPU_DEFAULTS, GPU_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable GPU cursor bypass"
@@ -168,6 +188,7 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
           step={1}
           unit="fr"
           value={props.gpuCursor.rotation_smoothing}
+          defaultValue={GPU_DEFAULTS.rotation_smoothing}
           onChange={(v) => updateGpu({ rotation_smoothing: v })}
         />
         <Slider
@@ -178,6 +199,7 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
           step={5}
           format={(v) => `${Math.round(v)}%`}
           value={props.gpuCursor.click_scale_percent}
+          defaultValue={GPU_DEFAULTS.click_scale_percent}
           onChange={(v) => updateGpu({ click_scale_percent: v })}
         />
         <Slider
@@ -188,6 +210,7 @@ export const HeadTab: Component<HeadTabProps> = (props) => {
           step={10}
           unit="ms"
           value={props.gpuCursor.click_scale_duration_ms}
+          defaultValue={GPU_DEFAULTS.click_scale_duration_ms}
           onChange={(v) => updateGpu({ click_scale_duration_ms: v })}
         />
       </SectionCard>

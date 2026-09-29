@@ -24,6 +24,12 @@ const PRERELEASE_MODE = cliArgs.has('--prerelease') || !cliArgs.has('--stable');
 const DRY_RUN = cliArgs.has('--dry-run');
 const SHOW_HELP = cliArgs.has('--help') || cliArgs.has('-h');
 
+/**
+ * Dist-tags are only a *hint*: publishers routinely ship the newest pre-release under a tag
+ * that is not in this list (`next` lagging behind `latest` on `@solidjs/vite-plugin`, nightly
+ * builds under a package-specific tag, …). So dist-tags are merged with the full version list
+ * from the registry and the genuinely newest version wins.
+ */
 const PRERELEASE_TAGS: readonly string[] = [
   'next',
   'beta',
@@ -34,6 +40,9 @@ const PRERELEASE_TAGS: readonly string[] = [
   'insiders',
   'dev',
 ];
+
+/** Version strings that are not real releases and must never be installed. */
+const UNPUBLISHABLE_VERSION = /^(0\.0\.0|0\.0\.0-|-[0-9])|-(alpha|beta|rc|next|dev|canary|insiders|experimental)\.?0?$/i;
 
 if (SHOW_HELP) {
   console.log(`Usage:
@@ -144,9 +153,11 @@ async function fetchLatestNpmVersion(
     if (!response.ok) return null;
     const data = (await response.json()) as {
       'dist-tags'?: Record<string, string>;
+      versions?: Record<string, unknown>;
       time?: Record<string, string>;
     };
     const tags = data['dist-tags'] ?? {};
+    const versions = Object.keys(data.versions ?? {});
     const times = data.time ?? {};
     const currentTime = times[current] ?? null;
 
@@ -159,11 +170,21 @@ async function fetchLatestNpmVersion(
       return compareVersions(v, current) > 0;
     };
 
+    const isCandidate = (v: string | undefined): v is string =>
+      typeof v === 'string' && v.length > 0 && !UNPUBLISHABLE_VERSION.test(v);
+
     let best: { version: string; publishedAt: string | null } | null = null;
-    for (const tag of PRERELEASE_TAGS) {
-      const candidate = tags[tag];
-      const publishedAt = candidate ? (times[candidate] ?? null) : null;
-      if (!candidate || !isStrictlyNewer(candidate, publishedAt)) continue;
+    // Dist-tags first, then *every* published version: some packages ship their newest
+    // pre-release under a tag nobody knows about (or under no tag at all).
+    const pool = [
+      ...PRERELEASE_TAGS.map((tag) => tags[tag]),
+      ...(tags['latest'] ? [tags['latest']] : []),
+      ...versions,
+    ];
+    for (const candidate of pool) {
+      if (!isCandidate(candidate)) continue;
+      const publishedAt = times[candidate] ?? null;
+      if (!isStrictlyNewer(candidate, publishedAt)) continue;
       if (best === null) {
         best = { version: candidate, publishedAt };
         continue;
@@ -184,11 +205,7 @@ async function fetchLatestNpmVersion(
       if (takeCandidate) best = { version: candidate, publishedAt };
     }
 
-    const latestTag = tags['latest'] ?? null;
-    return (
-      best?.version ??
-      (latestTag && isStrictlyNewer(latestTag, times[latestTag] ?? null) ? latestTag : null)
-    );
+    return best?.version ?? null;
   } catch {
     return null;
   }
@@ -199,29 +216,38 @@ async function fetchLatestCrateVersion(
   current: string,
   prerelease = true
 ): Promise<string | null> {
+  const headers = { 'User-Agent': 'FXCursorUpdater/4.0' };
   try {
-    const response = await fetch(`https://crates.io/api/v1/crates/${crateName}`, {
-      headers: { 'User-Agent': 'FXCursorUpdater/4.0' },
-    });
-    if (response.ok) {
-      const data = (await response.json()) as {
-        crate?: { max_version?: string; newest_version?: string };
-      };
-      const crate = data.crate;
-      if (!crate) return null;
-      if (
-        prerelease &&
-        crate.newest_version &&
-        compareVersions(crate.newest_version, current) > 0
-      ) {
-        return crate.newest_version;
-      }
-      // `max_version` is the newest *stable*: only an upgrade if it beats the current pin
-      // (returning it unconditionally rewrote e.g. `=2.0.0-rc.25` down to 1.x).
-      return crate.max_version && compareVersions(crate.max_version, current) > 0
-        ? crate.max_version
-        : null;
+    const response = await fetch(`https://crates.io/api/v1/crates/${crateName}`, { headers });
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      crate?: { max_version?: string; newest_version?: string };
+      versions?: { num: string; yanked: boolean }[];
+    };
+    const crate = data.crate;
+    if (!crate) return null;
+
+    // `newest_version` / `max_version` only describe the two most recent entries, which is not
+    // enough once a pre-release is *not* the newest upload (a 1.x patch can land after a
+    // 2.0.0-alpha). The full version list is authoritative: pick the greatest that is a strict
+    // upgrade over the pin.
+    const pool = new Set<string>();
+    if (crate.newest_version) pool.add(crate.newest_version);
+    if (crate.max_version) pool.add(crate.max_version);
+    for (const v of data.versions ?? []) {
+      if (!v.yanked && v.num && !UNPUBLISHABLE_VERSION.test(v.num)) pool.add(v.num);
     }
+
+    let best: string | null = null;
+    for (const candidate of pool) {
+      if (candidate === current) continue;
+      if (!prerelease && isPrereleaseVersion(candidate)) continue;
+      // A strict upgrade only: never cross down, and never move to a lower pre-release tier
+      // (2.0.0-alpha.1 → 2.0.0-beta.0 is forward, but 2.0.0-rc.1 → 2.0.0-beta.2 is not).
+      if (compareVersions(candidate, current) <= 0) continue;
+      if (best === null || compareVersions(candidate, best) > 0) best = candidate;
+    }
+    return best;
   } catch {}
   return null;
 }

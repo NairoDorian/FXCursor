@@ -3,6 +3,16 @@ import { SectionCard } from '../Common/SectionCard';
 import { Toggle } from '../Common/Toggle';
 import { Slider } from '../Common/Slider';
 import { ColorPicker } from '../Common/ColorPicker';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+
+const DEFAULTS = getDefaultConfig().trail.layers;
+const LAYER_KEYS = [
+  'width_factor',
+  'alpha_factor',
+  'start_blur',
+  'end_blur',
+] as const;
 
 interface LayerConfig {
   enabled: boolean;
@@ -31,6 +41,8 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
       <SectionCard
         title="Layer 1: Outer Glow (Soft Glow)"
         desc="Feathered exterior border providing contrast across dark backdrops (150% width reference)"
+        modified={isModified(props.layers[0], DEFAULTS[0], LAYER_KEYS)}
+        onReset={() => props.onUpdateLayer(0, resetFields(props.layers[0], DEFAULTS[0], LAYER_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable layer 1"
@@ -53,12 +65,13 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         />
         <Slider
           label="Width Factor"
-          sub="Expansion percentage relative to base cursor size (0% - 400%)"
+          sub="Width relative to the base cursor size (0 = invisible, 1 = same as the base)"
           min={0}
           max={4.0}
           step={0.05}
-          unit="%"
+          unit="x"
           value={props.layers[0].width_factor}
+          defaultValue={DEFAULTS[0].width_factor}
           onChange={(v) => updateLayer(0, { width_factor: v })}
         />
         <Slider
@@ -67,8 +80,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[0].alpha_factor}
+          defaultValue={DEFAULTS[0].alpha_factor}
           onChange={(v) => updateLayer(0, { alpha_factor: v })}
         />
         <Slider
@@ -77,8 +91,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[0].start_blur}
+          defaultValue={DEFAULTS[0].start_blur}
           onChange={(v) => updateLayer(0, { start_blur: v })}
         />
         <Slider
@@ -87,8 +102,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[0].end_blur}
+          defaultValue={DEFAULTS[0].end_blur}
           onChange={(v) => updateLayer(0, { end_blur: v })}
         />
       </SectionCard>
@@ -97,6 +113,8 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
       <SectionCard
         title="Layer 2: Mid Outline (Dark Contrast Shadow)"
         desc="Dark contrast border preventing ribbon washout against pure white surfaces (90% width reference)"
+        modified={isModified(props.layers[1], DEFAULTS[1], LAYER_KEYS)}
+        onReset={() => props.onUpdateLayer(1, resetFields(props.layers[1], DEFAULTS[1], LAYER_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable layer 2"
@@ -123,8 +141,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={3.0}
           step={0.05}
-          unit="%"
+          unit="x"
           value={props.layers[1].width_factor}
+          defaultValue={DEFAULTS[1].width_factor}
           onChange={(v) => updateLayer(1, { width_factor: v })}
         />
         <Slider
@@ -133,8 +152,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[1].alpha_factor}
+          defaultValue={DEFAULTS[1].alpha_factor}
           onChange={(v) => updateLayer(1, { alpha_factor: v })}
         />
         <Slider
@@ -143,8 +163,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[1].start_blur}
+          defaultValue={DEFAULTS[1].start_blur}
           onChange={(v) => updateLayer(1, { start_blur: v })}
         />
         <Slider
@@ -153,8 +174,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[1].end_blur}
+          defaultValue={DEFAULTS[1].end_blur}
           onChange={(v) => updateLayer(1, { end_blur: v })}
         />
       </SectionCard>
@@ -163,6 +185,8 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
       <SectionCard
         title="Layer 3: Core (Crisp Body)"
         desc="Primary solid luminous interior ribbon (50% width reference)"
+        modified={isModified(props.layers[2], DEFAULTS[2], LAYER_KEYS)}
+        onReset={() => props.onUpdateLayer(2, resetFields(props.layers[2], DEFAULTS[2], LAYER_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable layer 3"
@@ -189,8 +213,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={2.0}
           step={0.05}
-          unit="%"
+          unit="x"
           value={props.layers[2].width_factor}
+          defaultValue={DEFAULTS[2].width_factor}
           onChange={(v) => updateLayer(2, { width_factor: v })}
         />
         <Slider
@@ -199,8 +224,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[2].alpha_factor}
+          defaultValue={DEFAULTS[2].alpha_factor}
           onChange={(v) => updateLayer(2, { alpha_factor: v })}
         />
         <Slider
@@ -209,8 +235,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[2].start_blur}
+          defaultValue={DEFAULTS[2].start_blur}
           onChange={(v) => updateLayer(2, { start_blur: v })}
         />
         <Slider
@@ -219,8 +246,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[2].end_blur}
+          defaultValue={DEFAULTS[2].end_blur}
           onChange={(v) => updateLayer(2, { end_blur: v })}
         />
       </SectionCard>
@@ -229,6 +257,8 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
       <SectionCard
         title="Layer 4: Inner Spine (Thin Precision Centerline)"
         desc="Ultra-thin centerline needle maintaining razor-sharp tracking alignment (15% width reference)"
+        modified={isModified(props.layers[3], DEFAULTS[3], LAYER_KEYS)}
+        onReset={() => props.onUpdateLayer(3, resetFields(props.layers[3], DEFAULTS[3], LAYER_KEYS))}
         headerRight={
           <Toggle
             ariaLabel="Enable layer 4"
@@ -251,12 +281,13 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
         />
         <Slider
           label="Width Factor"
-          sub="Centerline thickness percentage (0% - 100%)"
+          sub="Outline thickness relative to the layer width (0 = hairline, 1 = solid fill)"
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[3].width_factor}
+          defaultValue={DEFAULTS[3].width_factor}
           onChange={(v) => updateLayer(3, { width_factor: v })}
         />
         <Slider
@@ -265,8 +296,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[3].alpha_factor}
+          defaultValue={DEFAULTS[3].alpha_factor}
           onChange={(v) => updateLayer(3, { alpha_factor: v })}
         />
         <Slider
@@ -275,8 +307,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[3].start_blur}
+          defaultValue={DEFAULTS[3].start_blur}
           onChange={(v) => updateLayer(3, { start_blur: v })}
         />
         <Slider
@@ -285,8 +318,9 @@ export const LayersTab: Component<LayersTabProps> = (props) => {
           min={0}
           max={1.0}
           step={0.01}
-          unit="%"
+          unit="x"
           value={props.layers[3].end_blur}
+          defaultValue={DEFAULTS[3].end_blur}
           onChange={(v) => updateLayer(3, { end_blur: v })}
         />
       </SectionCard>

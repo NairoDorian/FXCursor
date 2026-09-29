@@ -346,13 +346,12 @@ impl TrailChain {
             self.brush = (x, y);
         }
 
-        let head_spring = config.trail.head_spring / 1000.0;
-        let head_fric = (1.0 - config.trail.head_damping / 100.0)
-            .clamp(0.01, 1.0)
-            .powf(dt_scale);
-        let body_spring = config.trail.spring / 1000.0;
-        let body_fric =
-            (1.0 - config.trail.damping / 100.0).clamp(0.01, 1.0).powf(dt_scale);
+        // Springs are plain fractions of the gap and frictions plain velocity-retention factors,
+        // used exactly as the sliders show them.
+        let head_spring = config.trail.head_spring.clamp(0.0, 1.0);
+        let head_fric = config.trail.head_damping.clamp(0.0, 1.0).powf(dt_scale);
+        let body_spring = config.trail.spring.clamp(0.0, 1.0);
+        let body_fric = config.trail.damping.clamp(0.0, 1.0).powf(dt_scale);
 
         // 2. Head: 2nd-order spring-damper toward the brush (Windhawk ApplyTrailPhysicsSegment).
         {
@@ -477,7 +476,7 @@ impl SquishyState {
                 ..Default::default()
             };
         }
-        let smoothing = (config.head.squish_smoothing / 100.0).clamp(0.01, 1.0);
+        let smoothing = config.head.squish_smoothing.clamp(0.0, 1.0);
         let adaptive = 1.0 - (1.0 - smoothing).powf(dt_scale);
 
         self.pos_x += (x - self.pos_x) * adaptive;
@@ -488,7 +487,7 @@ impl SquishyState {
         self.prev_x = self.pos_x;
         self.prev_y = self.pos_y;
 
-        let intensity = config.head.squish_intensity / 100.0;
+        let intensity = config.head.squish_intensity;
         let amplified = (velocity * 8.0).min(200.0);
         self.target_scale = (amplified / 15.0) * intensity;
         self.current_scale += (self.target_scale - self.current_scale) * adaptive;
@@ -820,10 +819,10 @@ fn layer_sample_style(
     gradient: bool,
 ) -> ([f32; 4], f32) {
     let fade = apply_fade_curve(s.progress, config.trail.fade_mode);
-    // `speed` is px per REFERENCE_FRAME (1/120 s). Windhawk D3D/GDI+ and V3 all normalise by
-    // 20 in these same units (saturating at 2400 px/s); /10 doubled the boost at normal speed
-    // and made the ribbon look fat and pulsing.
-    let norm_speed = (s.speed / 20.0).min(1.0);
+    // `speed` is px per REFERENCE_FRAME (1/120 s); the reference speed is a plain parameter, so
+    // the user picks the velocity at which the boosts reach 100% instead of a hidden divisor.
+    let ref_speed = config.trail.velocity_reference_speed.max(0.001);
+    let norm_speed = (s.speed / ref_speed).min(1.0);
     let vel_width = 1.0 + norm_speed * config.trail.velocity_width_mult;
     let vel_alpha = 1.0 + norm_speed * config.trail.velocity_alpha_mult;
     let width = (config.trail.cursor_size * layer.width_factor * fade * vel_width)

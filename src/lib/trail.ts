@@ -4,8 +4,9 @@
  * the Rust reference trace (`test/fixtures/trail_trace.json`, written by `bun run fixtures`) and
  * fail on any drift. Change the physics on one side ⇒ change it on the other and regenerate.
  *
- * Units follow Windhawk: positions in overlay pixels, velocities in px per 1/120 s reference
- * frame, springs `k = setting / 1000`, friction `1 − percent / 100` raised to `dt_scale`.
+ * Units: positions in overlay pixels, velocities in px per 1/120 s reference frame, springs
+ * are plain fractions of the gap and frictions plain velocity-retention factors (both 0..1)
+ * raised to `dt_scale`.
  */
 import type { AppConfig, LayerConfig } from './presets';
 
@@ -118,10 +119,10 @@ export class TrailChain {
       this.brush = { x, y };
     }
 
-    const headSpring = trail.head_spring / 1000;
-    const headFric = Math.pow(clamp(1 - trail.head_damping / 100, 0.01, 1), dtScale);
-    const bodySpring = trail.spring / 1000;
-    const bodyFric = Math.pow(clamp(1 - trail.damping / 100, 0.01, 1), dtScale);
+    const headSpring = clamp(trail.head_spring, 0, 1);
+    const headFric = Math.pow(clamp(trail.head_damping, 0, 1), dtScale);
+    const bodySpring = clamp(trail.spring, 0, 1);
+    const bodyFric = Math.pow(clamp(trail.damping, 0, 1), dtScale);
 
     // 2. Head: spring-damper toward the brush.
     const head = this.nodes[0];
@@ -307,7 +308,8 @@ export function layerSampleStyle(
 ): { color: Rgba; radius: number } {
   const fade = fadeCurve(s.progress, trail.fade_mode);
   // px per 1/120 s, normalised by 20 like Windhawk / V3 (saturates at 2400 px/s).
-  const normSpeed = Math.min(s.speed / 20, 1);
+  // The reference speed is a plain parameter, not a hard-coded divisor.
+  const normSpeed = Math.min(s.speed / Math.max(0.001, trail.velocity_reference_speed), 1);
   const velWidth = 1 + normSpeed * trail.velocity_width_mult;
   const velAlpha = 1 + normSpeed * trail.velocity_alpha_mult;
   const width = Math.max(trail.min_width, trail.cursor_size * layer.width_factor * fade * velWidth);
@@ -333,7 +335,7 @@ export class SquishyHead {
       Object.assign(this, { x, y, prevX: x, prevY: y, scale: 0, targetScale: 0, angle: 0, targetAngle: 0 });
       this.initialized = true;
     }
-    const smoothing = clamp(head.squish_smoothing / 100, 0.01, 1);
+    const smoothing = clamp(head.squish_smoothing, 0, 1);
     const adaptive = 1 - Math.pow(1 - smoothing, dtScale);
     this.x += (x - this.x) * adaptive;
     this.y += (y - this.y) * adaptive;
@@ -342,7 +344,7 @@ export class SquishyHead {
     const velocity = Math.hypot(dx, dy) / dtScale;
     this.prevX = this.x;
     this.prevY = this.y;
-    this.targetScale = (Math.min(velocity * 8, 200) / 15) * (head.squish_intensity / 100);
+    this.targetScale = (Math.min(velocity * 8, 200) / 15) * head.squish_intensity;
     this.scale += (this.targetScale - this.scale) * adaptive;
     if (velocity > 0.5) this.targetAngle = Math.atan2(dy, dx);
     const tau = Math.PI * 2;

@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "enabled": true,
   "effect_mode": "Ribbon",
   "general": {
@@ -12,10 +13,10 @@
   "trail": {
     "enabled": true,
     "length": 80,
-    "spring": 50.0,
-    "damping": 30.0,
-    "head_spring": 50.0,
-    "head_damping": 30.0,
+    "spring": 0.05,
+    "damping": 0.7,
+    "head_spring": 0.05,
+    "head_damping": 0.7,
     "lazy_enabled": false,
     "lazy_radius": 30.0,
     "lazy_friction": 0.4,
@@ -23,6 +24,7 @@
     "min_width": 2.0,
     "velocity_width_mult": 0.5,
     "velocity_alpha_mult": 0.1,
+    "velocity_reference_speed": 20.0,
     "interpolation_steps": 2,
     "fade_mode": 3,
     "enable_gradient": true,
@@ -109,8 +111,8 @@
   "head": {
     "enabled": false,
     "size": 18.0,
-    "squish_intensity": 3.0,
-    "squish_smoothing": 50.0,
+    "squish_intensity": 0.03,
+    "squish_smoothing": 0.5,
     "color": [
       1.0,
       1.0,

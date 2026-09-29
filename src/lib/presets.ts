@@ -24,6 +24,7 @@ export type {
 
 export function getDefaultConfig(): AppConfig {
   return {
+    schema_version: 2,
     enabled: true,
     effect_mode: 'Ribbon',
     general: {
@@ -37,10 +38,12 @@ export function getDefaultConfig(): AppConfig {
     trail: {
       enabled: true,
       length: 80,
-      spring: 50.0,
-      damping: 30.0,
-      head_spring: 50.0,
-      head_damping: 30.0,
+      // Natural units: springs are plain fractions of the gap, frictions are plain
+      // velocity-retention factors. The value here is the value on the slider.
+      spring: 0.05,
+      damping: 0.7,
+      head_spring: 0.05,
+      head_damping: 0.7,
       lazy_enabled: false,
       lazy_radius: 30.0,
       lazy_friction: 0.4,
@@ -48,6 +51,7 @@ export function getDefaultConfig(): AppConfig {
       min_width: 2.0,
       velocity_width_mult: 0.5,
       velocity_alpha_mult: 0.1,
+      velocity_reference_speed: 20.0,
       interpolation_steps: 2,
       fade_mode: 3,
       enable_gradient: true,
@@ -92,11 +96,11 @@ export function getDefaultConfig(): AppConfig {
       ],
     },
     head: {
-      // Trail-only default (mirrors Rust / V3): squishy head is opt-in.
+      // Trail-only default (mirrors Rust): squishy head is opt-in.
       enabled: false,
       size: 18.0,
-      squish_intensity: 3.0,
-      squish_smoothing: 50.0,
+      squish_intensity: 0.03,
+      squish_smoothing: 0.5,
       color: [1.0, 1.0, 1.0, 1.0],
       filled: true,
       thickness: -1.0,

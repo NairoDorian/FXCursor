@@ -34,7 +34,7 @@ fn frame_period(max_fps: u32, refresh_hz: f32) -> Duration {
 
 /// Presentation mode for the current settings.
 ///
-/// `Fifo` (vsync) by default, as in V3: sleep-based pacing alone is not phase-locked to the
+/// `Fifo` (vsync) by default: sleep-based pacing alone is not phase-locked to the
 /// display, so with `Mailbox` the sleep jitter around each vblank makes the compositor drop one
 /// frame and repeat the next every so often. That reads as the trail stuttering *sometimes*.
 /// `Mailbox` is only worth it when the user caps above the refresh rate (lower latency),
@@ -216,7 +216,7 @@ impl OverlayState {
             .inner_size()
             .unwrap_or(tauri::PhysicalSize::new(bounds.2, bounds.3));
         let surface_caps = surface.get_capabilities(&adapter);
-        // A plain UNORM target, as Windhawk's D3D mod (B8G8R8A8_UNORM): colours are authored in
+        // A plain UNORM target (`B8G8R8A8_UNORM`): colours are authored in
         // sRGB and DWM composites pre-multiplied values in that same encoded space. On an *_Srgb
         // target the hardware encodes `c·a` after blending, so a half-transparent white glow edge
         // was stored as ~0.73 with alpha 0.5 (invalid pre-multiplied) and DWM drew it too bright.

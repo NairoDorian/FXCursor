@@ -1,19 +1,26 @@
 # Architectural Memory & Decisions Log
 
+> ⛔ **Never launch the app to test it.** Not `bun run tauri dev`, and never a bare
+> `target\debug\fxcursor.exe` — a debug build has **no front end bundled in** (it loads from
+> `devUrl` `http://localhost:1420`), so the webview shows an error page and the overlay is drawn
+> **opaque**: a stuck non-transparent window across the desktop that has twice needed a **Windows
+> reboot**. `scripts/snapshots/*.ps1` spawn `fxcursor.exe` too, so they count as launching it.
+> Use `bun run validate` / `rtk cargo test --workspace`, which are headless. Full rule:
+> [`docs/DO_NOT_LAUNCH_THE_APP.md`](docs/DO_NOT_LAUNCH_THE_APP.md).
+
 This document tracks design decisions, hardware interactions, crate evaluations, and resource budgets for FXCursor. Updated 2026-09-09 after a full code audit of the V4 codebase (now the repository root).
 
 ---
 
 ## 1. Architectural History
 
-| Version          | Shell        | Frontend             | Graphics            | Physics | RAM (measured/target)          | Notes                                                                                   |
-| ---------------- | ------------ | -------------------- | ------------------- | ------- | ------------------------------ | --------------------------------------------------------------------------------------- |
-| **V0** (mods)    | Windhawk     | none                 | GDI+, D3D11         | CPU     | in-process in explorer.exe     | Windows-only C++ reference for the 4-layer visual design (`legacy/original_mods/`)             |
-| **V1** (Legacy)  | Tauri V1     | SolidJS + Bun        | GDI+, D3D11 DLL     | CPU     | ~150–250 MB                    | Windows-only, injected DLL                                                              |
-| **V2** (Rust)    | winit 0.29   | egui 0.26            | wgpu 0.19           | CPU     | < 30 MB                        | Cross-platform, no webview                                                              |
-| **V3**           | Tauri V2     | React 19 + TW4       | wgpu 29             | CPU     | ~80–120 MB                     | `legacy/project_cursor/`, frozen                                                               |
-| **V4 (current)** | Tauri V2     | SolidJS 2 + native CSS | wgpu 30           | CPU     | ~330 MB RSS in debug (2 webviews); release target < 120 MB | Active V4 at repository root. Overlay is a Tauri window + wgpu surface. Daemon is an experimental prototype. |
-| **V4 (spec)**    | Rust daemon  | SolidJS 2 (transient) | wgpu 30            | GPU compute | < 12 MB daemon             | `docs/V4_ARCHITECTURE_SPECIFICATION.md`; Pillars 1, 2, 4, 6 (non-Windows), 7 not built  |
+| Version          | Shell        | Frontend               | Graphics  | Physics     | RAM (measured/target)          | Notes                                                                                       |
+| ---------------- | ------------ | ---------------------- | --------- | ----------- | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| **V1**           | Tauri V1     | SolidJS + Bun          | wgpu      | CPU         | ~150–250 MB                    | Windows-only first release                                                                   |
+| **V2**           | winit 0.29   | egui 0.26              | wgpu 0.19 | CPU         | < 30 MB                        | Cross-platform, no webview                                                                   |
+| **V3**           | Tauri V2     | SolidJS 2 + native CSS | wgpu 29   | CPU         | ~80–120 MB                     | Predecessor UI stack                                                                         |
+| **V4 (current)** | Tauri 3      | SolidJS 2 + native CSS | wgpu 30   | CPU         | ~330 MB RSS in debug (2 webviews); release target < 120 MB | Overlay is a Tauri window + wgpu surface. Daemon is an experimental prototype. |
+| **V4 (spec)**    | Rust daemon  | SolidJS 2 (transient)  | wgpu 30   | GPU compute | < 12 MB daemon                 | `docs/V4_ARCHITECTURE_SPECIFICATION.md`; Pillars 1, 2, 4, 6 (non-Windows), 7 not built          |
 
 ### Why V4 kept the Tauri single-process model for now
 
@@ -40,7 +47,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 ## 3. Crate Evaluation & Decisions
 
 ### Windowing: Tauri 2 (`tao`)
-- Overlay = `WebviewWindowBuilder` with `transparent`, `decorations(false)`, `always_on_top`, `skip_taskbar`, `shadow(false)`, `focused(false)`, then `set_ignore_cursor_events(true)` for click-through. No WndProc subclassing (V3's crash source).
+- Overlay = `WebviewWindowBuilder` with `transparent`, `decorations(false)`, `always_on_top`, `skip_taskbar`, `shadow(false)`, `focused(false)`, then `set_ignore_cursor_events(true)` for click-through. No WndProc subclassing, which was the predecessor's crash source.
 - Cost: an extra WebView2 process for a window that never shows HTML. Decision: accept for now; revisit with a raw HWND/winit overlay (roadmap Phase C).
 
 ### Graphics: wgpu 30
@@ -72,7 +79,7 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 ### Windows 11 (primary, verified)
 - Virtual desktop bounds from `GetSystemMetrics(SM_*VIRTUALSCREEN)`; shaders subtract the virtual origin so negative monitor coordinates work.
 - Config: `%APPDATA%\com.nairodorian.fxcursor\config.json`.
-- Historical NVIDIA/DXGI Vulkan wrapping issue (V3) has not reproduced with the Tauri transparent window; NVAPI workaround not carried over.
+- A historical NVIDIA/DXGI Vulkan wrapping issue has not reproduced with the Tauri transparent window; the old NVAPI workaround was not carried over.
 
 ### macOS (unverified)
 - Metal via wgpu; transparency relies on Tauri's `transparent(true)` (may need the `macos-private-api` feature for a truly transparent window).
@@ -88,10 +95,9 @@ This document tracks design decisions, hardware interactions, crate evaluations,
 ## 5. Build & Dependency Infrastructure
 
 - `bun run tauri dev` (Vite on port 1420 + `cargo run`), `bun run build`, `bun run tauri build` (NSIS current-user installer bundled).
-- `bun run update-deps` probes NPM pre-release dist-tags and Crates.io `newest_version` and then runs typecheck, build, `cargo check`, `cargo test`.
+- `bun run update-deps` probes NPM dist-tags *and* every published version, plus the full Crates.io version list, and then runs typecheck, build, `cargo check`, `cargo test`. It never downgrades and always prefers the newest pre-release.
 - `bun run before-commit`: 7 gates (typecheck, lint, tests, build, cargo check, cargo test, version sync).
 - `bun run arch`: regenerates `ARCHITECTURE.md` via Repomix `pack()`.
-- `legacy/dev_scripts/` PowerShell/CMD helpers still point at `legacy/project_cursor/` (legacy).
 
 ---
 

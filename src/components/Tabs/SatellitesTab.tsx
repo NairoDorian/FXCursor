@@ -3,6 +3,19 @@ import { SectionCard } from '../Common/SectionCard';
 import { Slider } from '../Common/Slider';
 import { Toggle } from '../Common/Toggle';
 import { ColorPicker } from '../Common/ColorPicker';
+import { getDefaultConfig } from '../../lib/presets';
+import { isModified, resetFields } from '../../lib/reset';
+
+const DEFAULTS = getDefaultConfig().satellites;
+const ORBIT_KEYS = [
+  'count',
+  'orbit_diameter',
+  'size',
+  'speed',
+  'dual_ring',
+  'show_orbit_ring',
+  'orbit_ring_thickness',
+] as const;
 
 interface SatelliteConfig {
   enabled: boolean;
@@ -31,6 +44,8 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
       <SectionCard
         title="Orbit Satellites (Celestial Bodies)"
         desc="SDF celestial orbs rotating smoothly around the mouse pointer"
+        modified={isModified(props.satellites, DEFAULTS, ORBIT_KEYS)}
+        onReset={() => props.onChange(resetFields(props.satellites, DEFAULTS, ORBIT_KEYS))}
         headerRight={
           <Toggle ariaLabel="Enable satellites" checked={props.satellites.enabled} onChange={(v) => update({ enabled: v })} />
         }
@@ -48,6 +63,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           max={16}
           step={1}
           value={props.satellites.count}
+          defaultValue={DEFAULTS.count}
           onChange={(v) => update({ count: v })}
         />
         <Slider
@@ -58,6 +74,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           step={1}
           unit="px"
           value={props.satellites.orbit_diameter}
+          defaultValue={DEFAULTS.orbit_diameter}
           onChange={(v) => update({ orbit_diameter: v })}
         />
         <Slider
@@ -68,6 +85,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           step={0.5}
           unit="px"
           value={props.satellites.size}
+          defaultValue={DEFAULTS.size}
           onChange={(v) => update({ size: v })}
         />
         <Slider
@@ -78,6 +96,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
           step={0.1}
           unit=" rad/s"
           value={props.satellites.speed}
+          defaultValue={DEFAULTS.speed}
           onChange={(v) => update({ speed: v })}
         />
 
@@ -122,6 +141,7 @@ export const SatellitesTab: Component<SatellitesTabProps> = (props) => {
             step={0.1}
             unit="px"
             value={props.satellites.orbit_ring_thickness}
+          defaultValue={DEFAULTS.orbit_ring_thickness}
             onChange={(v) => update({ orbit_ring_thickness: v })}
           />
         )}

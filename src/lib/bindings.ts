@@ -7,22 +7,22 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 /** Commands */
 export const commands = {
 	ping: () => __TAURI_INVOKE<string>("ping"),
-	getDiagnostics: () => __TAURI_INVOKE<SystemDiagnostics>("get_diagnostics"),
-	getConfig: () => __TAURI_INVOKE<AppConfig>("get_config").then((v) => (({...v,trail:({...v.trail,layers:v.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.head,color:v.head.color.map(i=>i)}),ripple:({...v.ripple,color_left:v.ripple.color_left.map(i=>i),color_right:v.ripple.color_right.map(i=>i),color_middle:v.ripple.color_middle.map(i=>i)}),particles:({...v.particles,color:v.particles.color.map(i=>i)}),satellites:({...v.satellites,color:v.satellites.color.map(i=>i)})}) as typeof v)),
-	updateConfig: (newConfig: AppConfig) => __TAURI_INVOKE<null>("update_config", { newConfig: ({...newConfig,trail:({...newConfig.trail,layers:newConfig.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...newConfig.head,color:newConfig.head.color.map(i=>i)}),ripple:({...newConfig.ripple,color_left:newConfig.ripple.color_left.map(i=>i),color_right:newConfig.ripple.color_right.map(i=>i),color_middle:newConfig.ripple.color_middle.map(i=>i)}),particles:({...newConfig.particles,color:newConfig.particles.color.map(i=>i)}),satellites:({...newConfig.satellites,color:newConfig.satellites.color.map(i=>i)})}) }),
+	getDiagnostics: () => __TAURI_INVOKE<SystemDiagnostics_Serialize>("get_diagnostics"),
+	getConfig: () => __TAURI_INVOKE<AppConfig_Serialize>("get_config"),
+	updateConfig: (newConfig: AppConfig_Deserialize) => __TAURI_INVOKE<null>("update_config", { newConfig }),
 	toggleOverlay: () => __TAURI_INVOKE<boolean>("toggle_overlay"),
-	resetDefaults: () => __TAURI_INVOKE<AppConfig>("reset_defaults").then((v) => (({...v,trail:({...v.trail,layers:v.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.head,color:v.head.color.map(i=>i)}),ripple:({...v.ripple,color_left:v.ripple.color_left.map(i=>i),color_right:v.ripple.color_right.map(i=>i),color_middle:v.ripple.color_middle.map(i=>i)}),particles:({...v.particles,color:v.particles.color.map(i=>i)}),satellites:({...v.satellites,color:v.satellites.color.map(i=>i)})}) as typeof v)),
+	resetDefaults: () => __TAURI_INVOKE<AppConfig_Serialize>("reset_defaults"),
 	/**  Writes the current configuration to disk immediately (bypassing the autosave debounce). */
 	saveConfig: () => __TAURI_INVOKE<string>("save_config"),
-	listPresets: () => __TAURI_INVOKE<PresetInfo[]>("list_presets").then((v) => (v.map(i=>({...i,config:({...i.config,trail:({...i.config.trail,layers:i.config.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...i.config.head,color:i.config.head.color.map(i=>i)}),ripple:({...i.config.ripple,color_left:i.config.ripple.color_left.map(i=>i),color_right:i.config.ripple.color_right.map(i=>i),color_middle:i.config.ripple.color_middle.map(i=>i)}),particles:({...i.config.particles,color:i.config.particles.color.map(i=>i)}),satellites:({...i.config.satellites,color:i.config.satellites.color.map(i=>i)})})})) as typeof v)),
-	applyPreset: (id: string) => __TAURI_INVOKE<AppConfig>("apply_preset", { id }).then((v) => (({...v,trail:({...v.trail,layers:v.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.head,color:v.head.color.map(i=>i)}),ripple:({...v.ripple,color_left:v.ripple.color_left.map(i=>i),color_right:v.ripple.color_right.map(i=>i),color_middle:v.ripple.color_middle.map(i=>i)}),particles:({...v.particles,color:v.particles.color.map(i=>i)}),satellites:({...v.satellites,color:v.satellites.color.map(i=>i)})}) as typeof v)),
+	listPresets: () => __TAURI_INVOKE<PresetInfo_Serialize[]>("list_presets"),
+	applyPreset: (id: string) => __TAURI_INVOKE<AppConfig_Serialize>("apply_preset", { id }),
 	/**
 	 *  Imports a user-supplied JSON document through the self-healing deserializer, so partial or
 	 *  slightly broken files still apply cleanly. Returns the healed config and what was repaired.
 	 */
-	importConfig: (json: string) => __TAURI_INVOKE<ImportOutcome>("import_config", { json }).then((v) => (({...v,config:({...v.config,trail:({...v.config.trail,layers:v.config.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.config.head,color:v.config.head.color.map(i=>i)}),ripple:({...v.config.ripple,color_left:v.config.ripple.color_left.map(i=>i),color_right:v.config.ripple.color_right.map(i=>i),color_middle:v.config.ripple.color_middle.map(i=>i)}),particles:({...v.config.particles,color:v.config.particles.color.map(i=>i)}),satellites:({...v.config.satellites,color:v.config.satellites.color.map(i=>i)})})}) as typeof v)),
+	importConfig: (json: string) => __TAURI_INVOKE<ImportOutcome_Serialize>("import_config", { json }),
 	/**  Backend log history for the Dev Console (newer records arrive via the `rust-log` event). */
-	getRecentLogs: () => __TAURI_INVOKE<LogRecord[]>("get_recent_logs").then((v) => (v.map(i=>i) as typeof v)),
+	getRecentLogs: () => __TAURI_INVOKE<LogRecord[]>("get_recent_logs"),
 	/**
 	 *  Renders the current overlay frame to a PNG (composited over dark grey) and returns its path.
 	 *  `width` / `height` = crop size centred on the cursor; 0 = whole overlay.
@@ -32,22 +32,30 @@ export const commands = {
 	 *  Stores the live configuration as a named user preset (`<config dir>/presets/user-<slug>.json`)
 	 *  and selects it. Saving under an existing name overwrites that preset.
 	 */
-	saveUserPreset: (name: string, description: string) => __TAURI_INVOKE<PresetInfo>("save_user_preset", { name, description }).then((v) => (({...v,config:({...v.config,trail:({...v.config.trail,layers:v.config.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...v.config.head,color:v.config.head.color.map(i=>i)}),ripple:({...v.config.ripple,color_left:v.config.ripple.color_left.map(i=>i),color_right:v.config.ripple.color_right.map(i=>i),color_middle:v.config.ripple.color_middle.map(i=>i)}),particles:({...v.config.particles,color:v.config.particles.color.map(i=>i)}),satellites:({...v.config.satellites,color:v.config.satellites.color.map(i=>i)})})}) as typeof v)),
+	saveUserPreset: (name: string, description: string) => __TAURI_INVOKE<PresetInfo_Serialize>("save_user_preset", { name, description }),
 	/**  Deletes a user preset and returns the refreshed preset list. Built-ins are refused. */
-	deleteUserPreset: (id: string) => __TAURI_INVOKE<PresetInfo[]>("delete_user_preset", { id }).then((v) => (v.map(i=>({...i,config:({...i.config,trail:({...i.config.trail,layers:i.config.trail.layers.map(i=>({...i,start_color:i.start_color.map(i=>i),end_color:i.end_color.map(i=>i)}))}),head:({...i.config.head,color:i.config.head.color.map(i=>i)}),ripple:({...i.config.ripple,color_left:i.config.ripple.color_left.map(i=>i),color_right:i.config.ripple.color_right.map(i=>i),color_middle:i.config.ripple.color_middle.map(i=>i)}),particles:({...i.config.particles,color:i.config.particles.color.map(i=>i)}),satellites:({...i.config.satellites,color:i.config.satellites.color.map(i=>i)})})})) as typeof v)),
+	deleteUserPreset: (id: string) => __TAURI_INVOKE<PresetInfo_Serialize[]>("delete_user_preset", { id }),
 };
 
 /* Types */
 /**  Root configuration tree for FXCursor, persisted to `config.json`. */
-export type AppConfig = {
+export type AppConfig = AppConfig_Serialize | AppConfig_Deserialize;
+
+/**  Root configuration tree for FXCursor, persisted to `config.json`. */
+export type AppConfig_Deserialize = {
+	/**
+	 *  Version of the parameter units this file was written with. Read by
+	 *  [`crate::migrate`] to convert older documents; do not edit by hand.
+	 */
+	schema_version?: number,
 	/**  Master toggle for all overlay cursor effects. */
 	enabled: boolean,
 	/**  Active effect mode gating visual components. */
 	effect_mode: EffectMode,
 	/**  General application and OS integration settings. */
-	general: GeneralConfig,
+	general: GeneralConfig_Deserialize,
 	/**  Ribbon trail physics and 4-layer master design parameters. */
-	trail: TrailConfig,
+	trail: TrailConfig_Deserialize,
 	/**  Velocity-elongated SDF cursor head settings. */
 	head: HeadConfig,
 	/**  Click-triggered expanding shockwave ripple settings. */
@@ -62,6 +70,37 @@ export type AppConfig = {
 	fps_counter: FpsCounterConfig,
 	/**  GPU-rendered system-cursor bypass settings (missing in older config files). */
 	gpu_cursor?: GpuCursorConfig,
+};
+
+/**  Root configuration tree for FXCursor, persisted to `config.json`. */
+export type AppConfig_Serialize = {
+	/**
+	 *  Version of the parameter units this file was written with. Read by
+	 *  [`crate::migrate`] to convert older documents; do not edit by hand.
+	 */
+	schema_version: number,
+	/**  Master toggle for all overlay cursor effects. */
+	enabled: boolean,
+	/**  Active effect mode gating visual components. */
+	effect_mode: EffectMode,
+	/**  General application and OS integration settings. */
+	general: GeneralConfig_Serialize,
+	/**  Ribbon trail physics and 4-layer master design parameters. */
+	trail: TrailConfig_Serialize,
+	/**  Velocity-elongated SDF cursor head settings. */
+	head: HeadConfig,
+	/**  Click-triggered expanding shockwave ripple settings. */
+	ripple: RippleConfig,
+	/**  Click-triggered particle burst settings. */
+	particles: ParticleConfig,
+	/**  Orbiting satellite bodies settings. */
+	satellites: SatelliteConfig,
+	/**  Rainbow chromatic hue cycling settings. */
+	rainbow: RainbowConfig,
+	/**  On-overlay FPS HUD counter settings. */
+	fps_counter: FpsCounterConfig,
+	/**  GPU-rendered system-cursor bypass settings (missing in older config files). */
+	gpu_cursor: GpuCursorConfig,
 };
 
 /**  Global rendering preset/mode selector controlling which visual subsystems are active. */
@@ -110,7 +149,10 @@ export type FrameStats = {
 };
 
 /**  General application shell and system integration settings. */
-export type GeneralConfig = {
+export type GeneralConfig = GeneralConfig_Serialize | GeneralConfig_Deserialize;
+
+/**  General application shell and system integration settings. */
+export type GeneralConfig_Deserialize = {
 	/**  Whether FXCursor launches automatically at operating system login. */
 	autostart: boolean,
 	/**  Whether closing the main Studio window minimizes it to the system tray. */
@@ -123,6 +165,22 @@ export type GeneralConfig = {
 	selected_preset: string,
 	/**  Frame-rate cap for the overlay render loop. `0` = match the display refresh rate. */
 	max_fps?: number,
+};
+
+/**  General application shell and system integration settings. */
+export type GeneralConfig_Serialize = {
+	/**  Whether FXCursor launches automatically at operating system login. */
+	autostart: boolean,
+	/**  Whether closing the main Studio window minimizes it to the system tray. */
+	minimize_to_tray: boolean,
+	/**  Whether the Studio window starts hidden in the tray on initial launch. */
+	start_minimized: boolean,
+	/**  Global keyboard shortcut string to toggle effects on/off (e.g. "Ctrl+Shift+E"). */
+	global_hotkey: string,
+	/**  ID of the currently active preset (built-in or user preset). */
+	selected_preset: string,
+	/**  Frame-rate cap for the overlay render loop. `0` = match the display refresh rate. */
+	max_fps: number,
 };
 
 /**
@@ -163,13 +221,13 @@ export type HeadConfig = {
 	/**  Resting diameter in physical pixels. */
 	size: number,
 	/**
-	 *  Elongation along the direction of motion, in percent per unit of eased speed (Windhawk
-	 *  `squishIntensity`: `scale = min(v × 8, 200) / 15 × intensity / 100`).
+	 *  Elongation along the direction of motion (0.0–1.0). Applied as
+	 *  `scale = min(v × 8, 200) / 15 × intensity`.
 	 */
 	squish_intensity: number,
 	/**
-	 *  Percent of the remaining gap the head (position, squish and angle) closes per 1/120 s
-	 *  (1–100; 100 = locked to the pointer).
+	 *  Fraction of the remaining gap the head (position, squish and angle) closes per 1/120 s
+	 *  (0.0–1.0; 1.0 = locked to the pointer).
 	 */
 	squish_smoothing: number,
 	/**  RGBA color of the cursor head (straight alpha, 0.0–1.0). */
@@ -180,8 +238,15 @@ export type HeadConfig = {
 	thickness: number,
 };
 
-export type ImportOutcome = {
-	config: AppConfig,
+export type ImportOutcome = ImportOutcome_Serialize | ImportOutcome_Deserialize;
+
+export type ImportOutcome_Deserialize = {
+	config: AppConfig_Deserialize,
+	repaired_paths: string[],
+};
+
+export type ImportOutcome_Serialize = {
+	config: AppConfig_Serialize,
 	repaired_paths: string[],
 };
 
@@ -231,11 +296,20 @@ export type ParticleConfig = {
 	color: [number, number, number, number],
 };
 
-export type PresetInfo = {
+export type PresetInfo = PresetInfo_Serialize | PresetInfo_Deserialize;
+
+export type PresetInfo_Deserialize = {
 	id: string,
 	name: string,
 	description: string,
-	config: AppConfig,
+	config: AppConfig_Deserialize,
+};
+
+export type PresetInfo_Serialize = {
+	id: string,
+	name: string,
+	description: string,
+	config: AppConfig_Serialize,
 };
 
 /**  Dynamic rainbow chromatic hue cycling. */
@@ -290,7 +364,32 @@ export type SatelliteConfig = {
 	color: [number, number, number, number],
 };
 
-export type SystemDiagnostics = {
+export type SystemDiagnostics = SystemDiagnostics_Serialize | SystemDiagnostics_Deserialize;
+
+export type SystemDiagnostics_Deserialize = {
+	os: string,
+	arch: string,
+	portable: boolean,
+	app_version: string,
+	config_path: string,
+	screen_virtual_origin: [number, number],
+	screen_virtual_size: [number, number],
+	gpu?: GpuInfo | null,
+	/**  "hook" when the OS-level mouse hook is delivering events, otherwise "poll". */
+	input_backend: string,
+	uptime_secs: number,
+	debug_build: boolean,
+	frame: FrameStats,
+	/**
+	 *  Result of the last global-hotkey registration, e.g. "registered 'Ctrl+Shift+E'" or an
+	 *  error message when another application owns the shortcut.
+	 */
+	hotkey_status: string,
+	/**  Display refresh rate the render loop paces to when `general.max_fps` is 0. */
+	display_refresh_hz: number,
+};
+
+export type SystemDiagnostics_Serialize = {
 	os: string,
 	arch: string,
 	portable: boolean,
@@ -313,36 +412,53 @@ export type SystemDiagnostics = {
 	display_refresh_hz: number,
 };
 
-/**  Physics, geometry, and layer parameters governing the cursor ribbon trail. */
-export type TrailConfig = {
+/**
+ *  Physics, geometry, and layer parameters governing the cursor ribbon trail.
+ * 
+ *  Every field is stored in the unit it is displayed in: springs are plain fractions
+ *  (`0.05` = 5% of the gap per reference frame) and frictions are plain retention factors
+ *  (`0.7` = keep 70% of the velocity). Nothing is divided by 1000 or expressed in percent
+ *  behind your back, so a value in the JSON is the value on the slider.
+ */
+export type TrailConfig = TrailConfig_Serialize | TrailConfig_Deserialize;
+
+/**
+ *  Physics, geometry, and layer parameters governing the cursor ribbon trail.
+ * 
+ *  Every field is stored in the unit it is displayed in: springs are plain fractions
+ *  (`0.05` = 5% of the gap per reference frame) and frictions are plain retention factors
+ *  (`0.7` = keep 70% of the velocity). Nothing is divided by 1000 or expressed in percent
+ *  behind your back, so a value in the JSON is the value on the slider.
+ */
+export type TrailConfig_Deserialize = {
 	/**  Master toggle for ribbon trail physics and rendering. */
 	enabled: boolean,
 	/**
-	 *  Number of simulated discrete nodes in the spring chain (4–150). Width, fade and blur
+	 *  Number of simulated discrete nodes in the spring chain (4–500). Width, fade and blur
 	 *  are parameterised by node index, so this is also the length of the visible taper.
 	 */
 	length: number,
 	/**
-	 *  Spring constant for the trailing body nodes, Windhawk scale: `k = spring / 1000` per
-	 *  1/120 s reference frame (1–500).
+	 *  Spring constant for the trailing body nodes, used directly: each reference frame adds
+	 *  `gap × spring` to the node's velocity (0.0–1.0). 0 = no pull, 1 = snaps shut.
 	 */
 	spring: number,
 	/**
-	 *  Velocity friction percent for the body nodes (0–99): each reference frame keeps
-	 *  `1 − damping/100` of the velocity.
+	 *  Fraction of velocity the body nodes keep per reference frame (0.0–1.0): 1.0 = frictionless
+	 *  (rings forever), 0.0 = every node stops dead each frame.
 	 */
 	damping: number,
-	/**  Spring stiffness constant for the leading head node (same scale as `spring`: /1000). */
+	/**  Spring constant for the leading head node, same units and range as `spring`. */
 	head_spring: number,
-	/**  Velocity friction percent for the leading head node (0–99; higher = more damping). */
+	/**  Fraction of velocity the head keeps per reference frame, same units as `damping`. */
 	head_damping: number,
-	/**  LazyBrush: engage the TD-style dead-zone pointer smoother. */
+	/**  LazyBrush: engage the dead-zone pointer smoother. */
 	lazy_enabled?: boolean,
 	/**  Dead-zone radius in px the pointer must exceed before the brush starts moving. */
 	lazy_radius?: number,
 	/**
 	 *  Brush friction 0–0.99: fraction of the excess distance NOT applied per frame
-	 *  (0 = snap to pointer, →1 = frozen). TD formula: factor = 1 - sqrt(1-(1-f)^2).
+	 *  (0 = snap to pointer, →1 = frozen). Factor: `1 - sqrt(1-(1-f)^2)`.
 	 */
 	lazy_friction?: number,
 	/**
@@ -352,13 +468,85 @@ export type TrailConfig = {
 	cursor_size: number,
 	/**  Minimum clamping width in physical pixels at the tail of the trail. */
 	min_width: number,
-	/**
-	 *  Extra width at full speed: `width × (1 + mult × min(speed / 20, 1))`, speed in px per
-	 *  1/120 s (saturates at 2400 px/s, as in Windhawk).
-	 */
+	/**  Extra width at full speed: `width × (1 + mult × min(speed / velocity_reference_speed, 1))`. */
 	velocity_width_mult: number,
 	/**  Extra opacity at full speed, same normalisation as `velocity_width_mult`. */
 	velocity_alpha_mult: number,
+	/**  Speed (px per 1/120 s reference frame) at which the velocity boosts above reach 100%. */
+	velocity_reference_speed: number,
+	/**
+	 *  Fixed Catmull-Rom sub-samples per node segment. Only used when `adaptive_quality` is
+	 *  off; the adaptive path picks its own count from the local curvature.
+	 */
+	interpolation_steps: number,
+	/**
+	 *  Falloff curve along the length of the trail
+	 *  (0=Linear, 1=EaseOut, 2=Exponential, 3=Sigmoid, 4=Smoothstep).
+	 */
+	fade_mode: number,
+	/**  Whether gradient interpolation between start and end color is applied. */
+	enable_gradient: boolean,
+	/**
+	 *  Curvature-adaptive spline sampling (3–24 px spacing): dense in bends, sparse on straight
+	 *  runs. Overrides `interpolation_steps`.
+	 */
+	adaptive_quality: boolean,
+	/**  4-Layer Master Design: [0]=Outer Glow, [1]=Mid Shadow, [2]=Crisp Core, [3]=Inner Spine. */
+	layers: [LayerConfig, LayerConfig, LayerConfig, LayerConfig],
+};
+
+/**
+ *  Physics, geometry, and layer parameters governing the cursor ribbon trail.
+ * 
+ *  Every field is stored in the unit it is displayed in: springs are plain fractions
+ *  (`0.05` = 5% of the gap per reference frame) and frictions are plain retention factors
+ *  (`0.7` = keep 70% of the velocity). Nothing is divided by 1000 or expressed in percent
+ *  behind your back, so a value in the JSON is the value on the slider.
+ */
+export type TrailConfig_Serialize = {
+	/**  Master toggle for ribbon trail physics and rendering. */
+	enabled: boolean,
+	/**
+	 *  Number of simulated discrete nodes in the spring chain (4–500). Width, fade and blur
+	 *  are parameterised by node index, so this is also the length of the visible taper.
+	 */
+	length: number,
+	/**
+	 *  Spring constant for the trailing body nodes, used directly: each reference frame adds
+	 *  `gap × spring` to the node's velocity (0.0–1.0). 0 = no pull, 1 = snaps shut.
+	 */
+	spring: number,
+	/**
+	 *  Fraction of velocity the body nodes keep per reference frame (0.0–1.0): 1.0 = frictionless
+	 *  (rings forever), 0.0 = every node stops dead each frame.
+	 */
+	damping: number,
+	/**  Spring constant for the leading head node, same units and range as `spring`. */
+	head_spring: number,
+	/**  Fraction of velocity the head keeps per reference frame, same units as `damping`. */
+	head_damping: number,
+	/**  LazyBrush: engage the dead-zone pointer smoother. */
+	lazy_enabled: boolean,
+	/**  Dead-zone radius in px the pointer must exceed before the brush starts moving. */
+	lazy_radius: number,
+	/**
+	 *  Brush friction 0–0.99: fraction of the excess distance NOT applied per frame
+	 *  (0 = snap to pointer, →1 = frozen). Factor: `1 - sqrt(1-(1-f)^2)`.
+	 */
+	lazy_friction: number,
+	/**
+	 *  Reference ribbon width in physical pixels at the head; each layer scales it by its
+	 *  `width_factor`.
+	 */
+	cursor_size: number,
+	/**  Minimum clamping width in physical pixels at the tail of the trail. */
+	min_width: number,
+	/**  Extra width at full speed: `width × (1 + mult × min(speed / velocity_reference_speed, 1))`. */
+	velocity_width_mult: number,
+	/**  Extra opacity at full speed, same normalisation as `velocity_width_mult`. */
+	velocity_alpha_mult: number,
+	/**  Speed (px per 1/120 s reference frame) at which the velocity boosts above reach 100%. */
+	velocity_reference_speed: number,
 	/**
 	 *  Fixed Catmull-Rom sub-samples per node segment. Only used when `adaptive_quality` is
 	 *  off; the adaptive path picks its own count from the local curvature.

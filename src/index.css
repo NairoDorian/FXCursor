@@ -170,6 +170,16 @@ html {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+/* Right-hand cluster of a card header: the "Default" button plus whatever the section passes
+   as `headerRight` (usually a master toggle). */
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .card-title {
@@ -213,6 +223,88 @@ html {
   align-items: center;
   gap: 12px;
   min-width: 220px;
+}
+
+/* Per-parameter "revert to default": a circular arrow that stays dim until the value actually
+   differs from the shipped default, so it never implies a change needs undoing. */
+.reset-param {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.reset-param svg {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+
+.reset-param:hover:not(:disabled) {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  background: var(--accent-subtle);
+}
+
+.reset-param:hover:not(:disabled) svg {
+  opacity: 1;
+}
+
+.reset-param.active {
+  color: var(--accent-primary);
+  border-color: var(--accent-glow);
+}
+
+.reset-param.active svg {
+  opacity: 1;
+}
+
+.reset-param:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* Per-section "Default" button in a card header. */
+.reset-section {  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.reset-section:hover:not(:disabled) {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  background: var(--accent-subtle);
+}
+
+.reset-section.active {
+  color: var(--accent-primary);
+  border-color: var(--accent-glow);
+}
+
+.reset-section:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .custom-slider {
@@ -297,4 +389,19 @@ input:checked + .slider-round {
 
 input:checked + .slider-round:before {
   transform: translateX(20px);
+}
+
+/* Page-level reset bar, shown between the tab nav and the content. */
+.page-reset-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 6px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.page-reset-hint {
+  font-size: 11px;
+  color: var(--text-muted);
 }
